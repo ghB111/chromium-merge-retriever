@@ -18,10 +18,10 @@ A containerized FastAPI application that lets you upload Chromium changelog JSON
 
 ## Environment Configuration
 
-Copy `.env.example` to `.env` and fill in the values:
+Copy `env.template` to `.env` and fill in the values:
 
 ```bash
-cp .env.example .env
+cp env.template .env
 ```
 
 Required variables:
@@ -69,7 +69,7 @@ frontend/          # Static assets served by FastAPI
   app.js
 Dockerfile         # Container image definition
 docker-compose.yml # Local orchestration with env + volume
-.env.example       # Sample environment configuration
+env.template       # Sample environment configuration
 ```
 
 ## Usage Flow
