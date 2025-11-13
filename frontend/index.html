@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chromium Changelog Chat</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app__header">
+        <h1>Chromium Changelog Chat</h1>
+        <p>Upload a Chromium changelog JSON and ask questions about the commits.</p>
+      </header>
+
+      <section class="upload" id="uploadSection">
+        <form id="uploadForm">
+          <label class="upload__label" for="fileInput">
+            <span>Upload changelog JSON</span>
+            <input type="file" id="fileInput" accept="application/json" required />
+          </label>
+          <button type="submit">Create Chat</button>
+        </form>
+        <p class="upload__hint">
+          The file should resemble the output from Chromium's changelog API, such as
+          <a href="https://chromium.googlesource.com/chromium/src/+log/142.0.7444.5..143.0.7499.2?format=JSON" target="_blank" rel="noopener noreferrer">
+            this example
+          </a>.
+        </p>
+      </section>
+
+      <section class="chat hidden" id="chatSection">
+        <div class="chat__status" id="chatStatus"></div>
+        <div class="chat__window" id="chatWindow"></div>
+        <form class="chat__input" id="chatForm">
+          <textarea id="messageInput" rows="1" placeholder="Ask about the uploaded changelog..." required></textarea>
+          <button type="submit">Ask</button>
+        </form>
+      </section>
+    </div>
+
+    <template id="messageTemplate">
+      <div class="message">
+        <div class="message__role"></div>
+        <div class="message__content"></div>
+        <div class="message__sources"></div>
+      </div>
+    </template>
+
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
