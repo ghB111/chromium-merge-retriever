@@ -24,6 +24,7 @@ const envSchema = z.object({
 
   // OpenAI
   OPENAI_API_KEY: z.string().optional(),
+  OPENAI_BASE_URL: z.string().optional(),
   OPENAI_FAST_MODEL: z.string().default('gpt-4o-mini'),
   OPENAI_STRONG_MODEL: z.string().default('gpt-4o'),
 
@@ -116,6 +117,7 @@ class Config {
   get openai() {
     return {
       apiKey: this.env.OPENAI_API_KEY,
+      baseUrl: this.env.OPENAI_BASE_URL,
       fastModel: this.env.OPENAI_FAST_MODEL,
       strongModel: this.env.OPENAI_STRONG_MODEL,
     };

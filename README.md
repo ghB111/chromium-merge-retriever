@@ -151,10 +151,26 @@ All configuration is via environment variables. See `.env.example` for all optio
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | OpenAI API key for LLM features | - |
+| `OPENAI_BASE_URL` | Custom base URL for OpenAI-compatible APIs (Azure, Ollama, vLLM, etc.) | - |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/chromium_search` |
 | `MAX_TOOL_CALLS_PER_RUN` | Budget for tool calls | `12` |
 | `RUN_TIMEOUT_MS` | Timeout for agent runs | `110000` (110s) |
 | `MAX_COMMITS_DEFAULT` | Max commits to fetch | `7000` |
+
+### Using Custom LLM Providers
+
+The service supports any OpenAI-compatible API by setting `OPENAI_BASE_URL`:
+
+```bash
+# Azure OpenAI
+OPENAI_BASE_URL=https://your-resource.openai.azure.com
+
+# Local Ollama
+OPENAI_BASE_URL=http://localhost:11434/v1
+
+# vLLM
+OPENAI_BASE_URL=http://localhost:8000/v1
+```
 
 ## How It Works
 

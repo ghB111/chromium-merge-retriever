@@ -90,7 +90,12 @@ export class ModelRouter {
     if (this.config.openai.apiKey) {
       this.client = new OpenAI({
         apiKey: this.config.openai.apiKey,
+        ...(this.config.openai.baseUrl && { baseURL: this.config.openai.baseUrl }),
       });
+      
+      if (this.config.openai.baseUrl) {
+        this.logger.info({ baseUrl: this.config.openai.baseUrl }, 'Using custom OpenAI base URL');
+      }
     } else {
       this.logger.warn('OpenAI API key not configured, LLM features will be disabled');
     }
