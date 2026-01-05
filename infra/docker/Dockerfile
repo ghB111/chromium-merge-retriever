@@ -5,9 +5,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files (including web for workspace resolution)
 COPY package.json package-lock.json* ./
 COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/tools/package.json ./packages/tools/
 COPY packages/agent/package.json ./packages/agent/
@@ -37,9 +38,10 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-# Copy package files for production
+# Copy package files for production (including web for workspace resolution)
 COPY package.json package-lock.json* ./
 COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/tools/package.json ./packages/tools/
 COPY packages/agent/package.json ./packages/agent/
