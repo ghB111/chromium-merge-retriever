@@ -1,0 +1,27 @@
+{
+  "name": "@chromium-search/agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@chromium-search/shared": "*",
+    "@chromium-search/tools": "*",
+    "openai": "^4.20.1"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.4"
+  }
+}

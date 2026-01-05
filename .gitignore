@@ -1,41 +1,40 @@
-# Prerequisites
-*.d
+# Dependencies
+node_modules/
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# Build outputs
+dist/
+*.tsbuildinfo
 
-# Precompiled Headers
-*.gch
-*.pch
+# Environment files
+.env
+.env.local
+.env.*.local
 
-# Linker files
-*.ilk
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Debugger Files
-*.pdb
+# OS
+.DS_Store
+Thumbs.db
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
+# Logs
+logs/
+*.log
+npm-debug.log*
 
-# Fortran module files
-*.mod
-*.smod
+# Test coverage
+coverage/
 
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
+# Prisma
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
 
-# Executables
-*.exe
-*.out
-*.app
+# Docker
+.docker/
 
-# debug information files
-*.dwo
+# Misc
+*.bak
+*.tmp

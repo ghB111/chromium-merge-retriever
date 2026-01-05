@@ -1,0 +1,54 @@
+// Prisma schema for Chromium Agentic Search Service
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Session table for storing chat sessions
+model Session {
+  id            String    @id @default(uuid())
+  rangeEnabled  Boolean   @default(true)
+  startSha      String?
+  endSha        String?
+  pathScope     String[]  @default([])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  messages      Message[]
+  runs          AgentRun[]
+}
+
+// Message table for storing chat messages
+model Message {
+  id        String   @id @default(uuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String   // 'user' | 'assistant'
+  content   String
+  createdAt DateTime @default(now())
+  runId     String?  // Associated agent run for assistant messages
+
+  @@index([sessionId])
+}
+
+// AgentRun table for storing agent run metadata
+model AgentRun {
+  id             String   @id @default(uuid())
+  sessionId      String
+  session        Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  queryHash      String   // Hash of the user query
+  status         String   // 'running' | 'completed' | 'failed'
+  durationMs     Int?
+  toolCallCount  Int      @default(0)
+  bytesUsed      Int      @default(0)
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@index([sessionId])
+  @@index([createdAt])
+}
