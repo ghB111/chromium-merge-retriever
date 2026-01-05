@@ -7,8 +7,11 @@ A cloud-deployable chat service that answers questions about changes in Chromium
 - 🔍 **Commit Range Analysis**: Parse Gitiles log URLs and analyze changes within a specific commit range
 - 🤖 **Agentic Retrieval**: Intelligent retrieval and ranking of relevant commits, diffs, and files
 - 📊 **Evidence-Based Answers**: Grounded answers with commit SHAs, file paths, and diff excerpts
+- 💬 **Modern Web Interface**: Beautiful chat UI with scope configuration and evidence display
 - ⚡ **Optimized Performance**: Handles 2,000-7,000 commits with intelligent caching
 - 🐳 **Docker Ready**: Full Docker Compose setup for local development and cloud deployment
+
+![Web Interface](docs/screenshot.png)
 
 ## Quick Start
 
@@ -41,12 +44,17 @@ A cloud-deployable chat service that answers questions about changes in Chromium
    npm run db:migrate -w apps/api
    ```
 
-5. **Start the development server**:
+5. **Start the development servers**:
    ```bash
+   # Start API server (terminal 1)
    npm run dev
+
+   # Start web UI (terminal 2)
+   npm run dev:web
    ```
 
-The API will be available at `http://localhost:3000`.
+- **Web UI**: http://localhost:5173
+- **API**: http://localhost:3000
 
 ### Docker Deployment
 
@@ -56,10 +64,43 @@ The API will be available at `http://localhost:3000`.
    # Edit .env with your configuration
    ```
 
-2. **Build and start**:
+2. **Build all packages**:
+   ```bash
+   npm install
+   npm run build
+   ```
+
+3. **Start with Docker Compose**:
    ```bash
    docker-compose -f infra/docker/docker-compose.yml up --build -d
    ```
+
+- **Web UI**: http://localhost:8080
+- **API**: http://localhost:3000
+
+## Web Interface
+
+The web interface provides a modern chat experience for interacting with the Chromium Search service.
+
+### Features
+
+- **Scope Configuration**: Set commit range via Gitiles URL and filter by path scope
+- **Chat Interface**: Ask questions in natural language
+- **Evidence Display**: View related commits, diffs, and file excerpts
+- **Debug Mode**: Toggle to see detailed tool calls and ranking information
+
+### Usage
+
+1. **Set a commit range**: Paste a Gitiles log URL (e.g., `https://chromium.googlesource.com/chromium/src/+log/abc123..def456`)
+2. **Optional: Add path scope**: Limit search to specific directories (e.g., `net/`, `base/`)
+3. **Ask questions**: Type your question about the changes in the range
+
+### Example Questions
+
+- "What changes were made to the network stack?"
+- "Which commits modified the HTTP cache?"
+- "What could have caused test failures in net/http/?"
+- "Show me changes to class HttpStreamFactory"
 
 ## API Usage
 
@@ -126,12 +167,18 @@ Response:
 ```
 .
 ├── apps/
-│   └── api/                 # Express API server
+│   ├── api/                 # Express API server
+│   │   ├── src/
+│   │   │   ├── routes/      # API route handlers
+│   │   │   ├── services/    # Business logic
+│   │   │   └── middleware/  # Express middleware
+│   │   └── prisma/          # Database schema
+│   └── web/                 # React web interface
 │       ├── src/
-│       │   ├── routes/      # API route handlers
-│       │   ├── services/    # Business logic
-│       │   └── middleware/  # Express middleware
-│       └── prisma/          # Database schema
+│       │   ├── components/  # React components
+│       │   ├── hooks/       # Custom hooks
+│       │   └── services/    # API client
+│       └── public/          # Static assets
 ├── packages/
 │   ├── shared/              # Shared types, config, utilities
 │   ├── tools/               # Gitiles client and tools
