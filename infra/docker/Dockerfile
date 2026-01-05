@@ -25,8 +25,8 @@ COPY packages/agent/ ./packages/agent/
 # Generate Prisma client
 RUN npx prisma generate --schema=./apps/api/prisma/schema.prisma
 
-# Build TypeScript
-RUN npm run build
+# Build TypeScript packages (API only, not web)
+RUN npm run build:shared && npm run build:tools && npm run build:agent && npm run build:api
 
 # Production stage
 FROM node:20-alpine AS production
