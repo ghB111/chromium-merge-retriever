@@ -114,7 +114,9 @@ export function ScopeConfig({ scope, onUpdateScope }: ScopeConfigProps) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-green-800">Range configured</p>
                   <p className="text-xs text-green-600 truncate">
-                    {scope.range.startSha.slice(0, 8)}..{scope.range.endSha.slice(0, 8)}
+                    {scope.range.startSha.includes('.') ? scope.range.startSha : scope.range.startSha.slice(0, 8)}
+                    ..
+                    {scope.range.endSha.includes('.') ? scope.range.endSha : scope.range.endSha.slice(0, 8)}
                   </p>
                 </div>
                 <button

@@ -127,6 +127,48 @@ describe('parseRangeFromGitilesUrl', () => {
       expect(result.endSha).toBe('145.0.7632.3');
     });
   });
+
+  describe('ref type detection', () => {
+    it('should set refType to sha for SHA refs', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/abc1234..def5678';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startRefType).toBe('sha');
+      expect(result.endRefType).toBe('sha');
+    });
+
+    it('should set refType to tag for version tag refs', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/144.0.7559.1..145.0.7632.3';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startRefType).toBe('tag');
+      expect(result.endRefType).toBe('tag');
+    });
+
+    it('should set mixed refTypes for mixed refs (SHA start, tag end)', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/abc1234..145.0.7632.3';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startRefType).toBe('sha');
+      expect(result.endRefType).toBe('tag');
+    });
+
+    it('should set mixed refTypes for mixed refs (tag start, SHA end)', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/144.0.7559.1..def5678';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startRefType).toBe('tag');
+      expect(result.endRefType).toBe('sha');
+    });
+
+    it('should set refType to tag for two-part version tags', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/144.0..145.0';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startRefType).toBe('tag');
+      expect(result.endRefType).toBe('tag');
+    });
+  });
 });
 
 describe('isVersionTag', () => {

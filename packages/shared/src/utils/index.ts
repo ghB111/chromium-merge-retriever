@@ -115,6 +115,34 @@ export function normalizeSha(sha: string): string {
 }
 
 // ============================================================================
+// Git Ref Validation (SHA or Version Tag)
+// ============================================================================
+
+// Pattern to match version tags (e.g., 144.0.7559.1)
+const VERSION_TAG_PATTERN = /^\d+(\.\d+)+$/;
+
+/**
+ * Check if a string is a valid version tag (e.g., 144.0.7559.1)
+ */
+export function isVersionTag(ref: string): boolean {
+  return VERSION_TAG_PATTERN.test(ref);
+}
+
+/**
+ * Check if a string is a valid Git ref (SHA or version tag)
+ */
+export function isValidGitRef(ref: string): boolean {
+  return isValidSha(ref) || isVersionTag(ref);
+}
+
+/**
+ * Normalize a Git ref (lowercase for SHAs, unchanged for version tags)
+ */
+export function normalizeGitRef(ref: string): string {
+  return isVersionTag(ref) ? ref : normalizeSha(ref);
+}
+
+// ============================================================================
 // URL Utilities
 // ============================================================================
 

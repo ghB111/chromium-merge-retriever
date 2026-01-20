@@ -13,7 +13,7 @@ import {
   ValidationError,
   BudgetExceededError,
   createTimer,
-  isValidSha,
+  isValidGitRef,
   type RunBudget,
   type BudgetUsage,
 } from '@chromium-search/shared';
@@ -135,10 +135,10 @@ export async function listCommits(
   const client = getGitilesClient();
   
   try {
-    // Validate SHAs
-    // if (!isValidSha(startSha) || !isValidSha(endSha)) {
-    //   throw new ValidationError('Invalid SHA format');
-    // }
+    // Validate refs (can be SHAs or version tags)
+    if (!isValidGitRef(startSha) || !isValidGitRef(endSha)) {
+      throw new ValidationError('Invalid ref format (must be SHA or version tag)');
+    }
     
     const commits = await client.listCommits({
       repoBaseUrl: context.repoBaseUrl,
@@ -187,8 +187,8 @@ export async function getCommitDetails(
   const client = getGitilesClient();
   
   try {
-    if (!isValidSha(sha)) {
-      throw new ValidationError('Invalid SHA format');
+    if (!isValidGitRef(sha)) {
+      throw new ValidationError('Invalid ref format (must be SHA or version tag)');
     }
     
     const details = await client.getCommitDetails(context.repoBaseUrl, sha);
@@ -232,8 +232,8 @@ export async function getDiffExcerpt(
   const client = getGitilesClient();
   
   try {
-    if (!isValidSha(sha)) {
-      throw new ValidationError('Invalid SHA format');
+    if (!isValidGitRef(sha)) {
+      throw new ValidationError('Invalid ref format (must be SHA or version tag)');
     }
     
     const diff = await client.getDiffExcerpt(context.repoBaseUrl, sha, {
@@ -282,9 +282,9 @@ export async function readFileAtRevision(
   const client = getGitilesClient();
   
   try {
-    // Allow HEAD or valid SHA
-    if (revision !== 'HEAD' && !isValidSha(revision)) {
-      throw new ValidationError('Invalid revision format (expected SHA or HEAD)');
+    // Allow HEAD, valid SHA, or version tag
+    if (revision !== 'HEAD' && !isValidGitRef(revision)) {
+      throw new ValidationError('Invalid revision format (expected SHA, version tag, or HEAD)');
     }
     
     // Validate path (basic security check)

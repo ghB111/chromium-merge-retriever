@@ -157,9 +157,13 @@ export interface ChatMessageRequest {
 // Gitiles Types
 // ============================================================================
 
+export type GitRefType = 'sha' | 'tag';
+
 export interface ParsedRangeUrl {
-  startSha: string;
-  endSha: string;
+  startSha: string;      // Keep name for compatibility (can be SHA or tag)
+  endSha: string;        // Keep name for compatibility (can be SHA or tag)
+  startRefType: GitRefType;
+  endRefType: GitRefType;
   repoBaseUrl: string;
 }
 

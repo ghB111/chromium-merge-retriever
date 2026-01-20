@@ -16,8 +16,8 @@ const updateScopeSchema = z.object({
   rangeEnabled: z.boolean().optional(),
   rangeUrl: z.string().url().optional(),
   range: z.object({
-    startSha: z.string().min(7).max(40),
-    endSha: z.string().min(7).max(40),
+    startSha: z.string().min(1).max(50),  // Allow SHAs (7-40) and version tags (e.g., 144.0.7559.1)
+    endSha: z.string().min(1).max(50),
   }).optional(),
   pathScope: z.array(z.string()).optional(),
 });
