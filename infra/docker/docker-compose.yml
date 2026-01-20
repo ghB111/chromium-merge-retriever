@@ -45,6 +45,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
@@ -93,7 +95,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile
-    command: npx prisma migrate deploy --schema=./apps/api/prisma/schema.prisma
+    command: npx prisma db push --schema=./apps/api/prisma/schema.prisma --skip-generate
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/chromium_search
     depends_on:
