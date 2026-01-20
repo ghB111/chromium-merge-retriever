@@ -136,9 +136,9 @@ export async function listCommits(
   
   try {
     // Validate SHAs
-    if (!isValidSha(startSha) || !isValidSha(endSha)) {
-      throw new ValidationError('Invalid SHA format');
-    }
+    // if (!isValidSha(startSha) || !isValidSha(endSha)) {
+    //   throw new ValidationError('Invalid SHA format');
+    // }
     
     const commits = await client.listCommits({
       repoBaseUrl: context.repoBaseUrl,
