@@ -232,32 +232,38 @@ export async function mapWithConcurrency<T, R>(
   concurrency: number
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
-  const executing: Promise<void>[] = [];
+  const executing: Set<Promise<void>> = new Set();
+  const allPromises: Promise<void>[] = [];
 
   for (let i = 0; i < items.length; i++) {
     const promise = fn(items[i], i).then((result) => {
       results[i] = result;
     });
 
-    executing.push(promise);
+    // Store for final await to propagate errors
+    allPromises.push(promise);
 
-    if (executing.length >= concurrency) {
+    // Create a tracked promise that removes itself when settled (success or failure)
+    // This promise always resolves (never rejects) so it's safe for tracking
+    const trackedPromise: Promise<void> = promise
+      .then(
+        () => {},
+        () => {}
+      )
+      .finally(() => {
+        executing.delete(trackedPromise);
+      });
+
+    executing.add(trackedPromise);
+
+    if (executing.size >= concurrency) {
+      // Wait for at least one promise to complete (which will remove itself from the set)
       await Promise.race(executing);
-      // Remove completed promises
-      for (let j = executing.length - 1; j >= 0; j--) {
-        // Check if promise is settled by racing with immediate resolve
-        const settled = await Promise.race([
-          executing[j].then(() => true).catch(() => true),
-          Promise.resolve(false),
-        ]);
-        if (settled) {
-          executing.splice(j, 1);
-        }
-      }
     }
   }
 
-  await Promise.all(executing);
+  // Wait for all original promises - this will throw if any failed
+  await Promise.all(allPromises);
   return results;
 }
 
