@@ -10,7 +10,7 @@ interface UseChatReturn {
   createSession: () => Promise<void>;
   updateScope: (scope: Partial<SessionScope> & { rangeUrl?: string }) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
-  clearMessages: () => void;
+  clearMessages: () => Promise<void>;
   showDebug: boolean;
   setShowDebug: (show: boolean) => void;
 }
@@ -122,9 +122,12 @@ export function useChat(): UseChatReturn {
     }
   }, [session, isLoading, showDebug]);
 
-  const clearMessages = useCallback(() => {
+  const clearMessages = useCallback(async () => {
+    // Set session to null immediately to prevent sends during the transition.
+    // This blocks sendMessage() since it checks `if (!session || isLoading) return;`
+    setSession(null);
     setMessages([]);
-    createSession();
+    await createSession();
   }, [createSession]);
 
   return {

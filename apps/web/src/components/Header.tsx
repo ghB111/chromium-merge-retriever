@@ -1,7 +1,7 @@
 import { GitBranch, RefreshCw } from 'lucide-react';
 
 interface HeaderProps {
-  onNewChat: () => void;
+  onNewChat: () => void | Promise<void>;
 }
 
 export function Header({ onNewChat }: HeaderProps) {
