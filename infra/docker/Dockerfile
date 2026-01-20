@@ -34,9 +34,6 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Install OpenSSL for Prisma
-RUN apk add --no-cache openssl
-
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
@@ -52,15 +49,15 @@ COPY packages/agent/package.json ./packages/agent/
 # Install production dependencies only
 RUN npm ci --omit=dev
 
-# Copy Prisma schema and generate client in production environment
-COPY apps/api/prisma ./apps/api/prisma
-RUN npx prisma generate --schema=./apps/api/prisma/schema.prisma
-
 # Copy built files
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/tools/dist ./packages/tools/dist
 COPY --from=builder /app/packages/agent/dist ./packages/agent/dist
+
+# Copy Prisma files
+COPY apps/api/prisma ./apps/api/prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 # Set ownership
 RUN chown -R nodejs:nodejs /app
