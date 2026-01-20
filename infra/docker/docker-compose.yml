@@ -5,12 +5,11 @@ version: '3.8'
 services:
   # Web UI (nginx serving static files + reverse proxy to API)
   web:
-    image: nginx:alpine
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
     ports:
       - "${WEB_PORT:-8080}:80"
-    volumes:
-      - ../../apps/web/dist:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - api
     restart: unless-stopped
