@@ -12,13 +12,43 @@ import {
   getConfig,
 } from '@chromium-search/shared';
 
+// Pattern to match a Git ref (SHA or version tag)
+// SHA: 7-40 hex characters
+// Version tag: numbers separated by dots (e.g., 144.0.7559.1)
+const GIT_REF_PATTERN = '(?:[a-fA-F0-9]{7,40}|\\d+(?:\\.\\d+)+)';
+
 // Pattern to match Gitiles log URLs with range
 // Example: https://chromium.googlesource.com/chromium/src/+log/abc123..def456
-const GITILES_LOG_RANGE_PATTERN = /\/\+log\/([a-fA-F0-9]{7,40})\.\.([a-fA-F0-9]{7,40})/;
+// Example: https://chromium.googlesource.com/chromium/src/+log/144.0.7559.1..145.0.7632.3
+const GITILES_LOG_RANGE_PATTERN = new RegExp(`\\/\\+log\\/(${GIT_REF_PATTERN})\\.\\.(${GIT_REF_PATTERN})`);
+
+// Pattern to match version tags (e.g., 144.0.7559.1)
+const VERSION_TAG_PATTERN = /^\d+(\.\d+)+$/;
 
 // Pattern to match the repo base URL
 // Example: https://chromium.googlesource.com/chromium/src
 const REPO_BASE_PATTERN = /^(https?:\/\/[^/]+)(\/[^+]+)/;
+
+/**
+ * Check if a string is a valid version tag (e.g., 144.0.7559.1)
+ */
+export function isVersionTag(ref: string): boolean {
+  return VERSION_TAG_PATTERN.test(ref);
+}
+
+/**
+ * Check if a string is a valid Git ref (SHA or version tag)
+ */
+export function isValidGitRef(ref: string): boolean {
+  return isValidSha(ref) || isVersionTag(ref);
+}
+
+/**
+ * Normalize a Git ref (lowercase for SHAs, unchanged for version tags)
+ */
+export function normalizeGitRef(ref: string): string {
+  return isVersionTag(ref) ? ref : normalizeSha(ref);
+}
 
 /**
  * Parse a Gitiles log URL to extract the commit range
@@ -63,24 +93,24 @@ export function parseRangeFromGitilesUrl(url: string): ParsedRangeUrl {
   const rangeMatch = parsedUrl.pathname.match(GITILES_LOG_RANGE_PATTERN);
   if (!rangeMatch) {
     throw new ValidationError(
-      'Could not extract commit range from URL. Expected format: .../+log/<SHA1>..<SHA2>',
+      'Could not extract commit range from URL. Expected format: .../+log/<REF1>..<REF2> where REF is a SHA or version tag',
       { url: trimmedUrl }
     );
   }
 
-  const [, startSha, endSha] = rangeMatch;
+  const [, startRef, endRef] = rangeMatch;
 
-  // Validate SHAs
-  if (!isValidSha(startSha)) {
-    throw new ValidationError('Invalid start SHA', { sha: startSha });
+  // Validate refs (can be SHAs or version tags)
+  if (!isValidGitRef(startRef)) {
+    throw new ValidationError('Invalid start ref (must be SHA or version tag)', { ref: startRef });
   }
-  if (!isValidSha(endSha)) {
-    throw new ValidationError('Invalid end SHA', { sha: endSha });
+  if (!isValidGitRef(endRef)) {
+    throw new ValidationError('Invalid end ref (must be SHA or version tag)', { ref: endRef });
   }
 
   return {
-    startSha: normalizeSha(startSha),
-    endSha: normalizeSha(endSha),
+    startSha: normalizeGitRef(startRef),
+    endSha: normalizeGitRef(endRef),
     repoBaseUrl,
   };
 }

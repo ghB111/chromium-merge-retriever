@@ -13,6 +13,9 @@ import {
   buildJsonCommitUrl,
   buildDiffUrl,
   buildTextDiffUrl,
+  isVersionTag,
+  isValidGitRef,
+  normalizeGitRef,
 } from './url-parser.js';
 
 // Set up environment for config
@@ -80,6 +83,103 @@ describe('parseRangeFromGitilesUrl', () => {
 
   it('should throw on empty input', () => {
     expect(() => parseRangeFromGitilesUrl('')).toThrow();
+  });
+
+  describe('version tag support', () => {
+    it('should parse URL with version tags', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/144.0.7559.1..145.0.7632.3';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startSha).toBe('144.0.7559.1');
+      expect(result.endSha).toBe('145.0.7632.3');
+      expect(result.repoBaseUrl).toBe('https://chromium.googlesource.com/chromium/src');
+    });
+
+    it('should parse URL with mixed SHA and version tag (start SHA, end tag)', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/abc1234..145.0.7632.3';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startSha).toBe('abc1234');
+      expect(result.endSha).toBe('145.0.7632.3');
+    });
+
+    it('should parse URL with mixed SHA and version tag (start tag, end SHA)', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/144.0.7559.1..def5678';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startSha).toBe('144.0.7559.1');
+      expect(result.endSha).toBe('def5678');
+    });
+
+    it('should parse URL with two-part version tags', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/144.0..145.0';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startSha).toBe('144.0');
+      expect(result.endSha).toBe('145.0');
+    });
+
+    it('should parse URL with version tags and query parameters', () => {
+      const url = 'https://chromium.googlesource.com/chromium/src/+log/144.0.7559.1..145.0.7632.3?pretty=fuller';
+      const result = parseRangeFromGitilesUrl(url);
+
+      expect(result.startSha).toBe('144.0.7559.1');
+      expect(result.endSha).toBe('145.0.7632.3');
+    });
+  });
+});
+
+describe('isVersionTag', () => {
+  it('should return true for valid version tags', () => {
+    expect(isVersionTag('144.0.7559.1')).toBe(true);
+    expect(isVersionTag('145.0.7632.3')).toBe(true);
+    expect(isVersionTag('1.0')).toBe(true);
+    expect(isVersionTag('1.2.3')).toBe(true);
+    expect(isVersionTag('100.200.300.400')).toBe(true);
+  });
+
+  it('should return false for SHAs', () => {
+    expect(isVersionTag('abc1234')).toBe(false);
+    expect(isVersionTag('abc1234567890123456789012345678901234567')).toBe(false);
+  });
+
+  it('should return false for invalid formats', () => {
+    expect(isVersionTag('144')).toBe(false); // single number
+    expect(isVersionTag('144.')).toBe(false); // trailing dot
+    expect(isVersionTag('.144.0')).toBe(false); // leading dot
+    expect(isVersionTag('144.0.abc')).toBe(false); // non-numeric
+    expect(isVersionTag('')).toBe(false);
+  });
+});
+
+describe('isValidGitRef', () => {
+  it('should return true for valid SHAs', () => {
+    expect(isValidGitRef('abc1234')).toBe(true);
+    expect(isValidGitRef('abc1234567890123456789012345678901234567')).toBe(true);
+  });
+
+  it('should return true for valid version tags', () => {
+    expect(isValidGitRef('144.0.7559.1')).toBe(true);
+    expect(isValidGitRef('145.0.7632.3')).toBe(true);
+  });
+
+  it('should return false for invalid refs', () => {
+    expect(isValidGitRef('abc')).toBe(false); // too short for SHA
+    expect(isValidGitRef('ghijklm')).toBe(false); // invalid hex
+    expect(isValidGitRef('144')).toBe(false); // not a valid version tag
+    expect(isValidGitRef('')).toBe(false);
+  });
+});
+
+describe('normalizeGitRef', () => {
+  it('should lowercase SHAs', () => {
+    expect(normalizeGitRef('ABC1234')).toBe('abc1234');
+    expect(normalizeGitRef('DEF5678')).toBe('def5678');
+  });
+
+  it('should preserve version tags as-is', () => {
+    expect(normalizeGitRef('144.0.7559.1')).toBe('144.0.7559.1');
+    expect(normalizeGitRef('145.0.7632.3')).toBe('145.0.7632.3');
   });
 });
 
