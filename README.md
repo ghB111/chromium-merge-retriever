@@ -72,8 +72,9 @@ A cloud-deployable chat service that answers questions about changes in Chromium
 
 3. **Start with Docker Compose**:
    ```bash
-   docker-compose -f infra/docker/docker-compose.yml up --build -d
+   docker-compose --env-file ./.env -f infra/docker/docker-compose.yml up --build -d
    ```
+   The `--env-file` flag ensures Docker Compose reads the repo root `.env`.
 
 - **Web UI**: http://localhost:8080
 - **API**: http://localhost:3000
