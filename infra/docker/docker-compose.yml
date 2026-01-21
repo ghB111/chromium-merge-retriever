@@ -1,0 +1,114 @@
+# Chromium Agentic Search Service - Docker Compose
+
+version: '3.8'
+
+services:
+  # Web UI (nginx serving static files + reverse proxy to API)
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - chromium-search
+
+  # API Service
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    ports:
+      - "${API_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/chromium_search
+      - REDIS_URL=redis://redis:6379
+      - REDIS_ENABLED=${REDIS_ENABLED:-true}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_FAST_MODEL=${OPENAI_FAST_MODEL:-gpt-4o-mini}
+      - OPENAI_STRONG_MODEL=${OPENAI_STRONG_MODEL:-gpt-4o}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_PRETTY=${LOG_PRETTY:-false}
+      - DEBUG_ENABLED=${DEBUG_ENABLED:-true}
+      - MAX_TOOL_CALLS_PER_RUN=${MAX_TOOL_CALLS_PER_RUN:-12}
+      - MAX_TOTAL_BYTES_PER_RUN=${MAX_TOTAL_BYTES_PER_RUN:-20000000}
+      - RUN_TIMEOUT_MS=${RUN_TIMEOUT_MS:-110000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - chromium-search
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=chromium_search
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - chromium-search
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - chromium-search
+
+  # Database migrations (run once)
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    command: npx prisma db push --schema=./apps/api/prisma/schema.prisma --skip-generate
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/chromium_search
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - chromium-search
+    restart: "no"
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  chromium-search:
+    driver: bridge

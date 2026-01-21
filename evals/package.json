@@ -1,0 +1,21 @@
+{
+  "name": "@chromium-search/evals",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "eval": "tsx src/runner.ts",
+    "eval:quick": "tsx src/runner.ts --quick"
+  },
+  "dependencies": {
+    "@chromium-search/shared": "*",
+    "@chromium-search/tools": "*",
+    "@chromium-search/agent": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.6.2"
+  }
+}
