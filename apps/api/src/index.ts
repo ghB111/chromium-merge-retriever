@@ -9,7 +9,7 @@ import rateLimit from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 import { getConfig, createLogger } from '@chromium-search/shared';
 
-import { createSessionsRouter, createMessagesRouter, createHealthRouter } from './routes/index.js';
+import { createSessionsRouter, createMessagesRouter, createHealthRouter, createAdminRouter, createPublicRangesRouter } from './routes/index.js';
 import { errorHandler, requestLogger } from './middleware/index.js';
 
 // ============================================================================
@@ -58,6 +58,12 @@ app.use('/health', createHealthRouter(prisma));
 // API v1 routes
 app.use('/v1/sessions', createSessionsRouter(prisma));
 app.use('/v1/sessions', createMessagesRouter(prisma));
+
+// Admin routes (password protected)
+app.use('/v1/admin', createAdminRouter(prisma));
+
+// Public routes for pre-saved ranges
+app.use('/v1/ranges', createPublicRangesRouter(prisma));
 
 // ============================================================================
 // Error Handling

@@ -62,6 +62,9 @@ const envSchema = z.object({
 
   // Debug
   DEBUG_ENABLED: z.string().default('true').transform((v) => v === 'true'),
+
+  // Admin
+  ADMIN_PASSWORD: z.string().default('chromium-admin'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
@@ -182,6 +185,12 @@ class Config {
   get defaults() {
     return {
       maxCommits: this.env.MAX_COMMITS_DEFAULT,
+    };
+  }
+
+  get admin() {
+    return {
+      password: this.env.ADMIN_PASSWORD,
     };
   }
 }

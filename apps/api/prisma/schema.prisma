@@ -53,3 +53,27 @@ model AgentRun {
   @@index([sessionId])
   @@index([createdAt])
 }
+
+// Pre-saved commit ranges configured by admin
+model PreSavedRange {
+  id            String   @id @default(uuid())
+  name          String   // Human-readable name for the range
+  gitilesUrl    String   @unique // Original Gitiles URL
+  repoBaseUrl   String   // Parsed repo base URL
+  startSha      String   // Start of the range (can be SHA or version tag)
+  endSha        String   // End of the range (can be SHA or version tag)
+  
+  // Download status
+  downloadStatus  String   @default("pending") // 'pending' | 'downloading' | 'completed' | 'error'
+  downloadProgress Int     @default(0) // Number of commits downloaded
+  totalCommits    Int?     // Total commits in range (known after first fetch)
+  lastDownloadedSha String? // Last successfully downloaded commit SHA (for resume)
+  errorMessage    String?  // Error message if download failed
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  downloadStartedAt DateTime?
+  downloadCompletedAt DateTime?
+
+  @@index([downloadStatus])
+}

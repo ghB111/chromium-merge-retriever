@@ -286,3 +286,40 @@ export class BudgetExceededError extends ServiceError {
     this.name = 'BudgetExceededError';
   }
 }
+
+// ============================================================================
+// Pre-Saved Range Types
+// ============================================================================
+
+export type DownloadStatus = 'pending' | 'downloading' | 'completed' | 'error';
+
+export interface PreSavedRange {
+  id: string;
+  name: string;
+  gitilesUrl: string;
+  repoBaseUrl: string;
+  startSha: string;
+  endSha: string;
+  downloadStatus: DownloadStatus;
+  downloadProgress: number;
+  totalCommits: number | null;
+  lastDownloadedSha: string | null;
+  errorMessage: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  downloadStartedAt: Date | null;
+  downloadCompletedAt: Date | null;
+}
+
+export interface CreatePreSavedRangeRequest {
+  name: string;
+  gitilesUrl: string;
+}
+
+export interface DownloadProgressUpdate {
+  rangeId: string;
+  status: DownloadStatus;
+  progress: number;
+  total: number | null;
+  error: string | null;
+}

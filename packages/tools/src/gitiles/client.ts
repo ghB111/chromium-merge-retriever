@@ -42,6 +42,8 @@ export interface ListCommitsOptions {
   endSha: string;
   pathScope?: string[];
   maxCommits?: number;
+  /** If true, check for full/pre-cached commit list first (no limit) */
+  preferFullCache?: boolean;
 }
 
 export interface GetDiffOptions {
@@ -179,9 +181,21 @@ export class GitilesClient {
    * List commits in a range
    */
   async listCommits(options: ListCommitsOptions): Promise<CommitSummary[]> {
-    const { repoBaseUrl, startSha, endSha, maxCommits } = options;
+    const { repoBaseUrl, startSha, endSha, maxCommits, preferFullCache } = options;
     const max = maxCommits ?? this.config.defaults.maxCommits;
     
+    // First, check for full cache (from pre-saved/downloaded ranges)
+    // This cache contains ALL commits and should return without limit
+    const fullCacheKey = `commits:full:${startSha}..${endSha}`;
+    if (preferFullCache !== false) {
+      const fullCached = await this.cache.get<CommitSummary[]>(fullCacheKey);
+      if (fullCached) {
+        this.logger.debug({ fullCacheKey, count: fullCached.length }, 'Full cache hit for commit list (no limit applied)');
+        return fullCached;
+      }
+    }
+    
+    // Check regular cache (may be partial due to previous limit)
     const cacheKey = `commits:${startSha}..${endSha}`;
     const cached = await this.cache.get<CommitSummary[]>(cacheKey);
     if (cached) {
@@ -220,6 +234,16 @@ export class GitilesClient {
     await this.cache.set(cacheKey, commits, this.config.cache.ttlCommitList);
 
     return commits;
+  }
+
+  /**
+   * Cache a full commit list (used by download service for pre-saved ranges)
+   * This cache bypasses the maxCommits limit when retrieved
+   */
+  async cacheFullCommitList(startSha: string, endSha: string, commits: CommitSummary[]): Promise<void> {
+    const fullCacheKey = `commits:full:${startSha}..${endSha}`;
+    await this.cache.set(fullCacheKey, commits, this.config.cache.ttlCommitDetails); // Long TTL like commit details
+    this.logger.info({ fullCacheKey, count: commits.length }, 'Cached full commit list');
   }
 
   /**
