@@ -7,8 +7,8 @@ import { PrismaClient } from '@prisma/client';
 import {
   createLogger,
   getConfig,
-  withRetry,
   mapWithConcurrency,
+  sleep,
   type Logger,
   type DownloadStatus,
   type DownloadProgressUpdate,
@@ -16,6 +16,17 @@ import {
 } from '@chromium-search/shared';
 
 import { getGitilesClient, CacheManager, type GitilesClient, type Cache } from '@chromium-search/tools';
+
+// ============================================================================
+// Rate Limit Retry Configuration
+// ============================================================================
+
+const RATE_LIMIT_CONFIG = {
+  initialDelayMs: 1000,      // Start with 1 second
+  maxDelayMs: 60000,         // Cap at 60 seconds (1 minute)
+  backoffMultiplier: 2,      // Double the delay each time
+  maxTotalRetries: 15,       // Safety limit to prevent infinite loops
+};
 
 // ============================================================================
 // Types
@@ -207,7 +218,111 @@ export class DownloadService {
   }
 
   /**
-   * Download a batch of commits with retries
+   * Check if an error is a rate limit error
+   */
+  private isRateLimitError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('429') || message.toLowerCase().includes('rate limit');
+  }
+
+  /**
+   * Check if an error is retryable (network errors, server errors)
+   */
+  private isRetryableError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return this.isRateLimitError(error) ||
+           message.includes('500') ||
+           message.includes('502') ||
+           message.includes('503') ||
+           message.includes('504') ||
+           message.includes('timeout') ||
+           message.includes('ECONNRESET') ||
+           message.includes('ENOTFOUND') ||
+           message.includes('ETIMEDOUT') ||
+           message.includes('EAI_AGAIN');
+  }
+
+  /**
+   * Retry with aggressive exponential backoff for rate limiting
+   * Keeps retrying until we've waited 60 seconds and still get rate limited
+   */
+  private async withRateLimitRetry<T>(
+    fn: () => Promise<T>,
+    context: string
+  ): Promise<T> {
+    let currentDelay = RATE_LIMIT_CONFIG.initialDelayMs;
+    let totalRetries = 0;
+    let lastError: unknown;
+
+    while (totalRetries < RATE_LIMIT_CONFIG.maxTotalRetries) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        totalRetries++;
+
+        const isRateLimit = this.isRateLimitError(error);
+        const isRetryable = this.isRetryableError(error);
+
+        // If not retryable at all, throw immediately
+        if (!isRetryable) {
+          this.logger.error({ context, error: String(error) }, 'Non-retryable error');
+          throw error;
+        }
+
+        // For rate limits: keep retrying with exponential backoff up to 60s
+        // For other errors: retry a few times with shorter delays
+        if (isRateLimit) {
+          // If we've already waited 60 seconds and still rate limited, give up
+          if (currentDelay >= RATE_LIMIT_CONFIG.maxDelayMs) {
+            this.logger.error(
+              { context, delay: currentDelay, totalRetries },
+              'Rate limit persists after maximum delay, giving up'
+            );
+            throw new Error(`Rate limit exceeded after waiting ${currentDelay / 1000}s. Original error: ${error instanceof Error ? error.message : String(error)}`);
+          }
+
+          this.logger.warn(
+            { context, delay: currentDelay, totalRetries, error: String(error) },
+            'Rate limited, waiting before retry'
+          );
+        } else {
+          // For non-rate-limit errors, use smaller delays and fewer retries
+          if (totalRetries >= 5) {
+            this.logger.error(
+              { context, totalRetries, error: String(error) },
+              'Max retries reached for non-rate-limit error'
+            );
+            throw error;
+          }
+
+          // Use a smaller delay for non-rate-limit errors
+          const nonRateLimitDelay = Math.min(currentDelay, 5000);
+          this.logger.warn(
+            { context, delay: nonRateLimitDelay, totalRetries, error: String(error) },
+            'Retryable error, waiting before retry'
+          );
+          await sleep(nonRateLimitDelay);
+          continue;
+        }
+
+        // Wait before retrying
+        await sleep(currentDelay);
+
+        // Exponential backoff, capped at max delay
+        currentDelay = Math.min(
+          currentDelay * RATE_LIMIT_CONFIG.backoffMultiplier,
+          RATE_LIMIT_CONFIG.maxDelayMs
+        );
+      }
+    }
+
+    // Safety: should not reach here, but throw if we do
+    throw lastError || new Error('Max retries exceeded');
+  }
+
+  /**
+   * Download a batch of commits with rate-limit-aware retries
    */
   private async downloadBatchWithRetry(
     _rangeId: string,
@@ -225,8 +340,8 @@ export class DownloadService {
           return;
         }
 
-        // Download with retry
-        await withRetry(
+        // Download with rate-limit-aware retry
+        await this.withRateLimitRetry(
           async () => {
             const details = await this.gitilesClient.getCommitDetails(repoBaseUrl, sha);
             
@@ -235,19 +350,7 @@ export class DownloadService {
             
             this.logger.debug({ sha }, 'Cached commit details');
           },
-          {
-            maxAttempts: 5,
-            delayMs: 2000,
-            shouldRetry: (error) => {
-              // Retry on network errors and rate limits
-              const message = error instanceof Error ? error.message : String(error);
-              return message.includes('429') || 
-                     message.includes('500') || 
-                     message.includes('timeout') ||
-                     message.includes('ECONNRESET');
-            },
-          },
-          this.logger
+          `getCommitDetails:${sha.slice(0, 8)}`
         );
       },
       this.config.gitiles.concurrency
