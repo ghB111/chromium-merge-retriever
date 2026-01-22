@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Settings, Link, FolderTree, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
-import type { SessionScope } from '../types';
+import { useState, useEffect } from 'react';
+import { Settings, Link, FolderTree, Check, X, ChevronDown, ChevronUp, List } from 'lucide-react';
+import type { SessionScope, PreSavedRange } from '../types';
+import { api } from '../services/api';
 
 interface ScopeConfigProps {
   scope: SessionScope | null;
@@ -13,6 +14,23 @@ export function ScopeConfig({ scope, onUpdateScope }: ScopeConfigProps) {
   const [pathScope, setPathScope] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Pre-saved ranges
+  const [preSavedRanges, setPreSavedRanges] = useState<PreSavedRange[]>([]);
+  const [showPreSavedRanges, setShowPreSavedRanges] = useState(false);
+
+  // Load pre-saved ranges on mount
+  useEffect(() => {
+    async function loadRanges() {
+      try {
+        const { ranges } = await api.getPublicRanges();
+        setPreSavedRanges(ranges);
+      } catch (err) {
+        console.error('Failed to load pre-saved ranges:', err);
+      }
+    }
+    loadRanges();
+  }, []);
 
   const handleSetRange = async () => {
     if (!rangeUrl.trim()) return;
@@ -66,6 +84,19 @@ export function ScopeConfig({ scope, onUpdateScope }: ScopeConfigProps) {
       await onUpdateScope({ rangeEnabled: false });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to clear range');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSelectPreSavedRange = async (range: PreSavedRange) => {
+    setIsUpdating(true);
+    setError(null);
+    setShowPreSavedRanges(false);
+    try {
+      await onUpdateScope({ rangeUrl: range.gitilesUrl });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to set range');
     } finally {
       setIsUpdating(false);
     }
@@ -128,26 +159,89 @@ export function ScopeConfig({ scope, onUpdateScope }: ScopeConfigProps) {
                 </button>
               </div>
             ) : (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={rangeUrl}
-                  onChange={(e) => setRangeUrl(e.target.value)}
-                  placeholder="https://chromium.googlesource.com/chromium/src/+log/abc123..def456"
-                  className="input flex-1"
-                  onKeyDown={(e) => e.key === 'Enter' && handleSetRange()}
-                />
-                <button
-                  onClick={handleSetRange}
-                  disabled={isUpdating || !rangeUrl.trim()}
-                  className="btn btn-primary"
-                >
-                  Set
-                </button>
+              <div className="space-y-3">
+                {/* Pre-saved ranges selector */}
+                {preSavedRanges.length > 0 && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowPreSavedRanges(!showPreSavedRanges)}
+                      className="w-full flex items-center justify-between p-3 bg-chromium-50 border border-chromium-200 rounded-lg hover:bg-chromium-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <List className="w-4 h-4 text-chromium-600" />
+                        <span className="text-sm font-medium text-chromium-700">
+                          Select from pre-saved ranges
+                        </span>
+                        <span className="text-xs text-chromium-500">
+                          ({preSavedRanges.length} available)
+                        </span>
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-chromium-600 transition-transform ${showPreSavedRanges ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {showPreSavedRanges && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                        {preSavedRanges.map((range) => (
+                          <button
+                            key={range.id}
+                            type="button"
+                            onClick={() => handleSelectPreSavedRange(range)}
+                            disabled={isUpdating}
+                            className="w-full text-left p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-gray-900">{range.name}</span>
+                              {range.downloadStatus === 'completed' && (
+                                <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                                  Cached
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {range.startSha.slice(0, 8)}..{range.endSha.slice(0, 8)}
+                              {range.totalCommits && (
+                                <span className="ml-2">({range.totalCommits.toLocaleString()} commits)</span>
+                              )}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Divider when both options available */}
+                {preSavedRanges.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-xs text-gray-400">or enter a URL</span>
+                    <div className="flex-1 h-px bg-gray-200" />
+                  </div>
+                )}
+
+                {/* Manual URL input */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={rangeUrl}
+                    onChange={(e) => setRangeUrl(e.target.value)}
+                    placeholder="https://chromium.googlesource.com/chromium/src/+log/abc123..def456"
+                    className="input flex-1"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSetRange()}
+                  />
+                  <button
+                    onClick={handleSetRange}
+                    disabled={isUpdating || !rangeUrl.trim()}
+                    className="btn btn-primary"
+                  >
+                    Set
+                  </button>
+                </div>
               </div>
             )}
             <p className="mt-1 text-xs text-gray-500">
-              Paste a Gitiles log URL to analyze a specific commit range
+              Select a pre-saved range or paste a Gitiles log URL to analyze a specific commit range
             </p>
           </div>
 

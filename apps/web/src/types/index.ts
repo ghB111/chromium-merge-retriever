@@ -63,3 +63,30 @@ export interface Message {
   timestamp: Date;
   isLoading?: boolean;
 }
+
+// Pre-saved range types
+export type DownloadStatus = 'pending' | 'downloading' | 'completed' | 'error';
+
+export interface PreSavedRange {
+  id: string;
+  name: string;
+  gitilesUrl: string;
+  repoBaseUrl?: string;
+  startSha: string;
+  endSha: string;
+  downloadStatus: DownloadStatus;
+  downloadProgress: number;
+  totalCommits: number | null;
+  lastDownloadedSha?: string | null;
+  errorMessage: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DownloadProgressUpdate {
+  rangeId: string;
+  status: DownloadStatus;
+  progress: number;
+  total: number | null;
+  error: string | null;
+}

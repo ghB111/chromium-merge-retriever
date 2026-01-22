@@ -151,10 +151,15 @@ export function buildRawFileUrl(repoBaseUrl: string, revision: string, path: str
  * @param repoBaseUrl - Repository base URL
  * @param startSha - Start commit SHA
  * @param endSha - End commit SHA
+ * @param pageSize - Optional number of commits per page (default: server default ~100)
  * @returns Gitiles log URL with JSON format
  */
-export function buildJsonLogUrl(repoBaseUrl: string, startSha: string, endSha: string): string {
-  return `${repoBaseUrl}/+log/${startSha}..${endSha}?format=JSON`;
+export function buildJsonLogUrl(repoBaseUrl: string, startSha: string, endSha: string, pageSize?: number): string {
+  const params = ['format=JSON'];
+  if (pageSize && pageSize > 0) {
+    params.push(`n=${pageSize}`);
+  }
+  return `${repoBaseUrl}/+log/${startSha}..${endSha}?${params.join('&')}`;
 }
 
 /**

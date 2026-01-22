@@ -1,4 +1,4 @@
-import type { Session, SessionScope, ChatResponse } from '../types';
+import type { Session, SessionScope, ChatResponse, PreSavedRange, DownloadProgressUpdate } from '../types';
 
 const API_BASE = '/v1';
 
@@ -23,6 +23,17 @@ async function handleResponse<T>(response: Response): Promise<T> {
     );
   }
   return response.json();
+}
+
+// Store admin password for subsequent requests
+let adminPassword: string | null = null;
+
+function getAdminHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (adminPassword) {
+    headers['Authorization'] = `Bearer ${adminPassword}`;
+  }
+  return headers;
 }
 
 export const api = {
@@ -78,6 +89,98 @@ export const api = {
   async checkHealth(): Promise<{ status: string }> {
     const response = await fetch('/health');
     return handleResponse<{ status: string }>(response);
+  },
+
+  // =========================================================================
+  // Public Range API (for user selection)
+  // =========================================================================
+
+  async getPublicRanges(): Promise<{ ranges: PreSavedRange[] }> {
+    const response = await fetch(`${API_BASE}/ranges`);
+    return handleResponse<{ ranges: PreSavedRange[] }>(response);
+  },
+
+  // =========================================================================
+  // Admin API (password protected)
+  // =========================================================================
+
+  setAdminPassword(password: string): void {
+    adminPassword = password;
+  },
+
+  clearAdminPassword(): void {
+    adminPassword = null;
+  },
+
+  async adminLogin(password: string): Promise<boolean> {
+    adminPassword = password;
+    try {
+      const response = await fetch(`${API_BASE}/admin/ranges`, {
+        headers: getAdminHeaders(),
+      });
+      if (!response.ok) {
+        adminPassword = null;
+        return false;
+      }
+      return true;
+    } catch {
+      adminPassword = null;
+      return false;
+    }
+  },
+
+  async getAdminRanges(): Promise<{ ranges: PreSavedRange[] }> {
+    const response = await fetch(`${API_BASE}/admin/ranges`, {
+      headers: getAdminHeaders(),
+    });
+    return handleResponse<{ ranges: PreSavedRange[] }>(response);
+  },
+
+  async createAdminRange(name: string, gitilesUrl: string): Promise<{ range: PreSavedRange }> {
+    const response = await fetch(`${API_BASE}/admin/ranges`, {
+      method: 'POST',
+      headers: getAdminHeaders(),
+      body: JSON.stringify({ name, gitilesUrl }),
+    });
+    return handleResponse<{ range: PreSavedRange }>(response);
+  },
+
+  async deleteAdminRange(rangeId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/ranges/${rangeId}`, {
+      method: 'DELETE',
+      headers: getAdminHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new ApiError(
+        error.error?.message || `HTTP ${response.status}`,
+        response.status,
+        error.error?.code
+      );
+    }
+  },
+
+  async startDownload(rangeId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/ranges/${rangeId}/download`, {
+      method: 'POST',
+      headers: getAdminHeaders(),
+    });
+    return handleResponse<void>(response);
+  },
+
+  async cancelDownload(rangeId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/ranges/${rangeId}/download`, {
+      method: 'DELETE',
+      headers: getAdminHeaders(),
+    });
+    return handleResponse<void>(response);
+  },
+
+  async getDownloadProgress(rangeId: string): Promise<{ progress: DownloadProgressUpdate }> {
+    const response = await fetch(`${API_BASE}/admin/ranges/${rangeId}/progress`, {
+      headers: getAdminHeaders(),
+    });
+    return handleResponse<{ progress: DownloadProgressUpdate }>(response);
   },
 };
 
