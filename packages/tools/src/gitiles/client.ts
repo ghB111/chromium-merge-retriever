@@ -98,12 +98,29 @@ export class GitilesClient {
     
     const result = await withRetry(
       async () => {
+        this.logger.trace({ url }, 'Gitiles request starting');
+        
         const response = await fetch(url, {
           headers: {
             'Accept': 'application/json, text/plain, */*',
             'User-Agent': 'ChromiumAgenticSearch/1.0',
           },
         });
+
+        // Log all responses at trace level with HTTP status
+        this.logger.trace(
+          { 
+            url, 
+            status: response.status, 
+            statusText: response.statusText,
+            ok: response.ok,
+            headers: {
+              contentType: response.headers.get('content-type'),
+              contentLength: response.headers.get('content-length'),
+            }
+          }, 
+          `Gitiles response: HTTP ${response.status}`
+        );
 
         if (!response.ok) {
           if (response.status === 404) {
