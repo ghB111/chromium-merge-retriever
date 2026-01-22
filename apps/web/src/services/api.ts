@@ -182,27 +182,6 @@ export const api = {
     });
     return handleResponse<{ progress: DownloadProgressUpdate }>(response);
   },
-
-  subscribeToProgress(rangeId: string, onProgress: (update: DownloadProgressUpdate) => void): () => void {
-    const eventSource = new EventSource(`${API_BASE}/admin/ranges/${rangeId}/progress/stream`);
-    
-    eventSource.onmessage = (event) => {
-      try {
-        const update = JSON.parse(event.data) as DownloadProgressUpdate;
-        onProgress(update);
-      } catch (error) {
-        console.error('Failed to parse progress update:', error);
-      }
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  },
 };
 
 export { ApiError };

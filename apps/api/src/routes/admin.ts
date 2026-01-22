@@ -52,7 +52,9 @@ export function adminAuth(req: Request, res: Response, next: NextFunction): void
     try {
       const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
       // Basic auth format is "username:password", we only care about password
-      password = decoded.includes(':') ? decoded.split(':')[1] : decoded;
+      // Use indexOf + slice to handle passwords containing colons
+      const colonIndex = decoded.indexOf(':');
+      password = colonIndex !== -1 ? decoded.slice(colonIndex + 1) : decoded;
     } catch {
       // Invalid base64
     }
@@ -186,8 +188,18 @@ export function createAdminRouter(prisma: PrismaClient): Router {
         await prisma.preSavedRange.delete({
           where: { id: rangeId },
         });
-      } catch {
-        throw new NotFoundError(`Range not found: ${rangeId}`);
+      } catch (error) {
+        // Only convert "record not found" errors (P2025) to NotFoundError
+        // Re-throw other errors (connection issues, timeouts, etc.) to be handled by error middleware
+        const isPrismaNotFound =
+          error instanceof Error &&
+          error.name === 'PrismaClientKnownRequestError' &&
+          (error as Error & { code?: string }).code === 'P2025';
+        
+        if (isPrismaNotFound) {
+          throw new NotFoundError(`Range not found: ${rangeId}`);
+        }
+        throw error;
       }
 
       logger.info({ rangeId }, 'Deleted pre-saved range');

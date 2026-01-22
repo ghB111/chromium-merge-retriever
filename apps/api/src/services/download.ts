@@ -68,41 +68,48 @@ export class DownloadService {
    * Start downloading commits for a range
    */
   async startDownload(rangeId: string): Promise<void> {
-    // Check if already downloading
+    // Atomic check-and-set to prevent TOCTOU race conditions.
+    // We must reserve the slot BEFORE any async operations.
     if (this.activeDownloads.has(rangeId)) {
       this.logger.warn({ rangeId }, 'Download already in progress');
       return;
     }
 
-    // Get range from database
-    const range = await this.prisma.preSavedRange.findUnique({
-      where: { id: rangeId },
-    });
-
-    if (!range) {
-      throw new Error(`Range not found: ${rangeId}`);
-    }
-
-    // Create abort controller for this download
+    // Create abort controller and reserve the slot immediately (before any await)
     const abortController = new AbortController();
     this.activeDownloads.set(rangeId, abortController);
 
-    // Update status to downloading
-    await this.updateRangeStatus(rangeId, 'downloading', {
-      downloadStartedAt: new Date(),
-      errorMessage: null,
-    });
+    try {
+      // Get range from database
+      const range = await this.prisma.preSavedRange.findUnique({
+        where: { id: rangeId },
+      });
 
-    // Start download in background
-    this.executeDownload({
-      rangeId,
-      repoBaseUrl: range.repoBaseUrl,
-      startSha: range.startSha,
-      endSha: range.endSha,
-      lastDownloadedSha: range.lastDownloadedSha,
-    }, abortController.signal).catch((error) => {
-      this.logger.error({ rangeId, error: String(error) }, 'Download failed');
-    });
+      if (!range) {
+        throw new Error(`Range not found: ${rangeId}`);
+      }
+
+      // Update status to downloading
+      await this.updateRangeStatus(rangeId, 'downloading', {
+        downloadStartedAt: new Date(),
+        errorMessage: null,
+      });
+
+      // Start download in background
+      this.executeDownload({
+        rangeId,
+        repoBaseUrl: range.repoBaseUrl,
+        startSha: range.startSha,
+        endSha: range.endSha,
+        lastDownloadedSha: range.lastDownloadedSha,
+      }, abortController.signal).catch((error) => {
+        this.logger.error({ rangeId, error: String(error) }, 'Download failed');
+      });
+    } catch (error) {
+      // Clean up the reserved slot if setup fails before the download starts
+      this.activeDownloads.delete(rangeId);
+      throw error;
+    }
   }
 
   /**
@@ -110,6 +117,10 @@ export class DownloadService {
    */
   private async executeDownload(job: DownloadJob, signal: AbortSignal): Promise<void> {
     const { rangeId, repoBaseUrl, startSha, endSha, lastDownloadedSha } = job;
+
+    // Track progress outside try block so values are available in catch
+    let totalCommits: number | null = null;
+    let downloadedCount = 0;
 
     try {
       // First, get the list of commits in the range
@@ -122,7 +133,7 @@ export class DownloadService {
         maxCommits: 100000, // No practical limit for admin downloads
       });
 
-      const totalCommits = commits.length;
+      totalCommits = commits.length;
       this.logger.info({ rangeId, totalCommits }, 'Found commits in range');
 
       // Update total commits in database
@@ -143,7 +154,7 @@ export class DownloadService {
 
       // Download commits in batches
       const batchSize = 10;
-      let downloadedCount = startIndex;
+      downloadedCount = startIndex;
 
       for (let i = startIndex; i < commits.length; i += batchSize) {
         // Check for abort
@@ -208,8 +219,8 @@ export class DownloadService {
       this.notifyProgress({
         rangeId,
         status: 'error',
-        progress: 0,
-        total: null,
+        progress: downloadedCount,
+        total: totalCommits,
         error: errorMessage,
       });
     } finally {
