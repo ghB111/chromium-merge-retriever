@@ -224,13 +224,15 @@ export class GitilesClient {
     let nextToken: string | undefined;
     let pageCount = 0;
     const maxPages = 100; // Safety limit
+    const pageSize = this.config.gitiles.pageSize;
 
     do {
+      // Build URL with page size parameter for both initial and pagination requests
       const url = nextToken
-        ? `${repoBaseUrl}/+log/${nextToken}?format=JSON`
-        : buildJsonLogUrl(repoBaseUrl, startSha, endSha);
+        ? `${repoBaseUrl}/+log/${nextToken}?format=JSON${pageSize > 0 ? `&n=${pageSize}` : ''}`
+        : buildJsonLogUrl(repoBaseUrl, startSha, endSha, pageSize);
 
-      this.logger.debug({ url, pageCount }, 'Fetching commit list page');
+      this.logger.debug({ url, pageCount, pageSize }, 'Fetching commit list page');
 
       const response = await this.fetchJson<GitilesLogResponse>(url);
       

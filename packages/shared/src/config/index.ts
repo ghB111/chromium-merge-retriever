@@ -34,6 +34,7 @@ const envSchema = z.object({
   GITILES_CONCURRENCY: z.string().default('4').transform(Number),
   GITILES_RETRY_COUNT: z.string().default('3').transform(Number),
   GITILES_RETRY_DELAY_MS: z.string().default('1000').transform(Number),
+  GITILES_PAGE_SIZE: z.string().default('1000').transform(Number), // Commits per page when listing (Google's Go client uses 1000)
 
   // Budgets
   MAX_TOOL_CALLS_PER_RUN: z.string().default('12').transform(Number),
@@ -134,6 +135,7 @@ class Config {
       concurrency: this.env.GITILES_CONCURRENCY,
       retryCount: this.env.GITILES_RETRY_COUNT,
       retryDelayMs: this.env.GITILES_RETRY_DELAY_MS,
+      pageSize: this.env.GITILES_PAGE_SIZE,
     };
   }
 
