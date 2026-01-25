@@ -108,6 +108,7 @@ export class AgentOrchestrator {
       );
 
       // Build result
+      const llmCalls = this.modelRouter.getLlmCallHistory();
       return {
         answer: result.answer,
         evidence: result.evidence,
@@ -117,6 +118,16 @@ export class AgentOrchestrator {
               toolCalls: toolContext.toolCalls,
               rankedCandidates: result.rankedCandidates,
               modelUsage: this.modelRouter.getUsageHistory(),
+              llmCalls: llmCalls.map(call => ({
+                callType: call.callType,
+                model: call.model,
+                systemPrompt: call.systemPrompt,
+                userPrompt: call.userPrompt,
+                response: call.response,
+                inputTokens: call.inputTokens,
+                outputTokens: call.outputTokens,
+                latencyMs: call.latencyMs,
+              })),
             }
           : { runId, toolCalls: [], rankedCandidates: [] },
       };
@@ -129,6 +140,7 @@ export class AgentOrchestrator {
       );
     } finally {
       this.modelRouter.clearUsageHistory();
+      this.modelRouter.clearLlmCallHistory();
     }
   }
 

@@ -1,4 +1,4 @@
-import type { Session, SessionScope, ChatResponse, PreSavedRange, DownloadProgressUpdate } from '../types';
+import type { Session, SessionScope, ChatResponse, PreSavedRange, DownloadProgressUpdate, AdminSessionSummary, AdminSessionDetail } from '../types';
 
 const API_BASE = '/v1';
 
@@ -181,6 +181,39 @@ export const api = {
       headers: getAdminHeaders(),
     });
     return handleResponse<{ progress: DownloadProgressUpdate }>(response);
+  },
+
+  // =========================================================================
+  // Admin Debug API
+  // =========================================================================
+
+  async getAdminSessions(): Promise<{ sessions: AdminSessionSummary[] }> {
+    const response = await fetch(`${API_BASE}/admin/sessions`, {
+      headers: getAdminHeaders(),
+    });
+    return handleResponse<{ sessions: AdminSessionSummary[] }>(response);
+  },
+
+  async getAdminSessionDetail(sessionId: string): Promise<AdminSessionDetail> {
+    const response = await fetch(`${API_BASE}/admin/sessions/${sessionId}`, {
+      headers: getAdminHeaders(),
+    });
+    return handleResponse<AdminSessionDetail>(response);
+  },
+
+  async deleteAdminSession(sessionId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/admin/sessions/${sessionId}`, {
+      method: 'DELETE',
+      headers: getAdminHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new ApiError(
+        error.error?.message || `HTTP ${response.status}`,
+        response.status,
+        error.error?.code
+      );
+    }
   },
 };
 

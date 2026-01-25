@@ -9,6 +9,7 @@ import {
   createTimer,
   type Logger,
   type ModelUsage,
+  type LlmCallType,
 } from '@chromium-search/shared';
 
 // ============================================================================
@@ -36,6 +37,19 @@ export interface CompletionResult {
   content: string;
   usage: ModelUsage;
   finishReason: string;
+}
+
+// LLM Call Record for debug purposes
+export interface LlmCallRecord {
+  callType: LlmCallType;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  response: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+  createdAt: Date;
 }
 
 // ============================================================================
@@ -83,6 +97,7 @@ export class ModelRouter {
   private logger: Logger;
   private config = getConfig();
   private usageHistory: ModelUsage[] = [];
+  private llmCallHistory: LlmCallRecord[] = [];
 
   constructor() {
     this.logger = createLogger('ModelRouter');
@@ -99,6 +114,32 @@ export class ModelRouter {
     } else {
       this.logger.warn('OpenAI API key not configured, LLM features will be disabled');
     }
+  }
+
+  /**
+   * Record an LLM call for debugging purposes
+   */
+  private recordLlmCall(
+    callType: LlmCallType,
+    model: string,
+    systemPrompt: string,
+    userPrompt: string,
+    response: string,
+    inputTokens: number,
+    outputTokens: number,
+    latencyMs: number
+  ): void {
+    this.llmCallHistory.push({
+      callType,
+      model,
+      systemPrompt,
+      userPrompt,
+      response,
+      inputTokens,
+      outputTokens,
+      latencyMs,
+      createdAt: new Date(),
+    });
   }
 
   /**
@@ -185,6 +226,7 @@ export class ModelRouter {
     query: string,
     systemPrompt: string
   ): Promise<{ intent: string; usage: ModelUsage }> {
+    const modelConfig = this.getModelConfig('fast');
     const result = await this.complete({
       messages: [
         { role: 'system', content: systemPrompt },
@@ -194,6 +236,18 @@ export class ModelRouter {
       maxTokens: 50,
       temperature: 0.1,
     });
+
+    // Record the LLM call for debugging
+    this.recordLlmCall(
+      'query_classification',
+      modelConfig.model,
+      systemPrompt,
+      query,
+      result.content,
+      result.usage.inputTokens,
+      result.usage.outputTokens,
+      result.usage.latencyMs
+    );
 
     return {
       intent: result.content.trim().toLowerCase(),
@@ -213,19 +267,31 @@ export class ModelRouter {
       .map((c) => `- ${c.sha.slice(0, 8)}: ${c.title}`)
       .join('\n');
 
+    const userPrompt = `Question: ${query}\n\nCommits:\n${commitList}\n\nReturn JSON array of top relevant commits with scores (0-1) and reasons.`;
+    const modelConfig = this.getModelConfig('fast');
+
     const result = await this.complete({
       messages: [
         { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `Question: ${query}\n\nCommits:\n${commitList}\n\nReturn JSON array of top relevant commits with scores (0-1) and reasons.`,
-        },
+        { role: 'user', content: userPrompt },
       ],
       tier: 'fast',
       maxTokens: 1000,
       temperature: 0.3,
       responseFormat: 'json',
     });
+
+    // Record the LLM call for debugging
+    this.recordLlmCall(
+      'ranking',
+      modelConfig.model,
+      systemPrompt,
+      userPrompt,
+      result.content,
+      result.usage.inputTokens,
+      result.usage.outputTokens,
+      result.usage.latencyMs
+    );
 
     try {
       const rankings = JSON.parse(result.content);
@@ -245,18 +311,32 @@ export class ModelRouter {
     systemPrompt: string,
     tier: ModelTier = 'strong'
   ): Promise<CompletionResult> {
-    return this.complete({
+    const userPrompt = `Question: ${query}\n\nContext and Evidence:\n${context}`;
+    const modelConfig = this.getModelConfig(tier);
+
+    const result = await this.complete({
       messages: [
         { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `Question: ${query}\n\nContext and Evidence:\n${context}`,
-        },
+        { role: 'user', content: userPrompt },
       ],
       tier,
       maxTokens: 4096,
       temperature: 0.5,
     });
+
+    // Record the LLM call for debugging
+    this.recordLlmCall(
+      'answer_synthesis',
+      modelConfig.model,
+      systemPrompt,
+      userPrompt,
+      result.content,
+      result.usage.inputTokens,
+      result.usage.outputTokens,
+      result.usage.latencyMs
+    );
+
+    return result;
   }
 
   /**
@@ -271,6 +351,20 @@ export class ModelRouter {
    */
   clearUsageHistory(): void {
     this.usageHistory = [];
+  }
+
+  /**
+   * Get LLM call history for debugging
+   */
+  getLlmCallHistory(): LlmCallRecord[] {
+    return [...this.llmCallHistory];
+  }
+
+  /**
+   * Clear LLM call history
+   */
+  clearLlmCallHistory(): void {
+    this.llmCallHistory = [];
   }
 }
 

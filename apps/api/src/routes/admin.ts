@@ -19,6 +19,14 @@ import { getDownloadService } from '../services/download.js';
 
 const logger = createLogger('AdminRoutes');
 
+import type { 
+  AdminSessionSummary, 
+  AdminSessionDetail, 
+  AdminMessage, 
+  AdminRunDetail,
+  LlmCall,
+} from '@chromium-search/shared';
+
 // ============================================================================
 // Validation Schemas
 // ============================================================================
@@ -337,6 +345,169 @@ export function createAdminRouter(prisma: PrismaClient): Router {
       req.on('close', () => {
         unsubscribe();
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // =========================================================================
+  // Debug Routes for Admin - Sessions and LLM Calls
+  // =========================================================================
+
+  /**
+   * GET /v1/admin/sessions
+   * List all sessions with summary info
+   */
+  router.get('/sessions', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const sessions = await prisma.session.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: {
+            select: {
+              messages: true,
+              runs: true,
+            },
+          },
+        },
+      });
+
+      const sessionSummaries: AdminSessionSummary[] = sessions.map(session => ({
+        id: session.id,
+        rangeEnabled: session.rangeEnabled,
+        startSha: session.startSha,
+        endSha: session.endSha,
+        pathScope: session.pathScope,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        messageCount: session._count.messages,
+        runCount: session._count.runs,
+      }));
+
+      res.json({ sessions: sessionSummaries });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * GET /v1/admin/sessions/:sessionId
+   * Get detailed session info including messages and LLM calls
+   */
+  router.get('/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { sessionId } = req.params;
+
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+          messages: {
+            orderBy: { createdAt: 'asc' },
+          },
+          runs: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              llmCalls: {
+                orderBy: { createdAt: 'asc' },
+              },
+            },
+          },
+          _count: {
+            select: {
+              messages: true,
+              runs: true,
+            },
+          },
+        },
+      });
+
+      if (!session) {
+        throw new NotFoundError(`Session not found: ${sessionId}`);
+      }
+
+      const sessionSummary: AdminSessionSummary = {
+        id: session.id,
+        rangeEnabled: session.rangeEnabled,
+        startSha: session.startSha,
+        endSha: session.endSha,
+        pathScope: session.pathScope,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        messageCount: session._count.messages,
+        runCount: session._count.runs,
+      };
+
+      const messages: AdminMessage[] = session.messages.map(msg => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        runId: msg.runId,
+        createdAt: msg.createdAt,
+      }));
+
+      const runs: AdminRunDetail[] = session.runs.map(run => ({
+        id: run.id,
+        queryHash: run.queryHash,
+        status: run.status,
+        durationMs: run.durationMs,
+        toolCallCount: run.toolCallCount,
+        bytesUsed: run.bytesUsed,
+        errorMessage: run.errorMessage,
+        createdAt: run.createdAt,
+        completedAt: run.completedAt,
+        llmCalls: run.llmCalls.map(call => ({
+          id: call.id,
+          runId: call.runId,
+          callType: call.callType as LlmCall['callType'],
+          model: call.model,
+          systemPrompt: call.systemPrompt,
+          userPrompt: call.userPrompt,
+          response: call.response,
+          inputTokens: call.inputTokens,
+          outputTokens: call.outputTokens,
+          latencyMs: call.latencyMs,
+          createdAt: call.createdAt,
+        })),
+      }));
+
+      const result: AdminSessionDetail = {
+        session: sessionSummary,
+        messages,
+        runs,
+      };
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * DELETE /v1/admin/sessions/:sessionId
+   * Delete a session and all its data
+   */
+  router.delete('/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { sessionId } = req.params;
+
+      try {
+        await prisma.session.delete({
+          where: { id: sessionId },
+        });
+      } catch (error) {
+        const isPrismaNotFound =
+          error instanceof Error &&
+          error.name === 'PrismaClientKnownRequestError' &&
+          (error as Error & { code?: string }).code === 'P2025';
+        
+        if (isPrismaNotFound) {
+          throw new NotFoundError(`Session not found: ${sessionId}`);
+        }
+        throw error;
+      }
+
+      logger.info({ sessionId }, 'Deleted session');
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

@@ -123,6 +123,18 @@ export interface DebugInfo {
   toolCalls: ToolCallRecord[];
   rankedCandidates: RankedCandidate[];
   modelUsage?: ModelUsage[];
+  llmCalls?: LlmCallDebugInfo[];
+}
+
+export interface LlmCallDebugInfo {
+  callType: LlmCallType;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  response: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
 }
 
 export interface ModelUsage {
@@ -322,4 +334,67 @@ export interface DownloadProgressUpdate {
   progress: number;
   total: number | null;
   error: string | null;
+}
+
+// ============================================================================
+// LLM Call Types (for debug page)
+// ============================================================================
+
+export type LlmCallType = 'query_classification' | 'ranking' | 'answer_synthesis' | 'other';
+
+export interface LlmCall {
+  id: string;
+  runId: string;
+  callType: LlmCallType;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  response: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+  createdAt: Date;
+}
+
+// ============================================================================
+// Admin Debug Types
+// ============================================================================
+
+export interface AdminSessionSummary {
+  id: string;
+  rangeEnabled: boolean;
+  startSha: string | null;
+  endSha: string | null;
+  pathScope: string[];
+  createdAt: Date;
+  updatedAt: Date;
+  messageCount: number;
+  runCount: number;
+}
+
+export interface AdminSessionDetail {
+  session: AdminSessionSummary;
+  messages: AdminMessage[];
+  runs: AdminRunDetail[];
+}
+
+export interface AdminMessage {
+  id: string;
+  role: string;
+  content: string;
+  runId: string | null;
+  createdAt: Date;
+}
+
+export interface AdminRunDetail {
+  id: string;
+  queryHash: string;
+  status: string;
+  durationMs: number | null;
+  toolCallCount: number;
+  bytesUsed: number;
+  errorMessage: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+  llmCalls: LlmCall[];
 }

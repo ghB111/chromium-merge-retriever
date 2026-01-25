@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   RefreshCw,
   Link as LinkIcon,
+  Bug,
 } from 'lucide-react';
 import { api, ApiError } from '../services/api';
 import type { PreSavedRange, DownloadProgressUpdate } from '../types';
@@ -254,6 +255,13 @@ export default function AdminPanel() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/admin/debug')}
+              className="btn btn-secondary text-sm"
+            >
+              <Bug className="w-4 h-4 mr-1" />
+              Debug Console
+            </button>
             <button
               onClick={() => navigate('/')}
               className="btn btn-secondary text-sm"
