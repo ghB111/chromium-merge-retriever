@@ -491,7 +491,7 @@ export class AgentOrchestrator {
     runId: string,
     message: string,
     toolCalls: ToolCallRecord[] = [],
-    llmLogs?: LlmLog[]
+    llmLogs: LlmLog[] = []
   ): AgentRunResult {
     return {
       answer: message,
