@@ -91,6 +91,11 @@ export class ChatService {
         result.debug?.toolCalls.reduce((sum: number, tc: { bytes: number }) => sum + tc.bytes, 0) ?? 0
       );
 
+      // Record LLM calls for debugging
+      if (result.debug?.llmCalls && result.debug.llmCalls.length > 0) {
+        await this.sessionService.recordLlmCalls(runId, result.debug.llmCalls);
+      }
+
       this.logger.info(
         { sessionId, runId, durationMs, evidenceCount: result.evidence.length },
         'Chat message processed successfully'

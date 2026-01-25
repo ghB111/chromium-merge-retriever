@@ -9,6 +9,7 @@ import {
   createTimer,
   type Logger,
   type ModelUsage,
+  type LlmCallType,
 } from '@chromium-search/shared';
 
 // ============================================================================
@@ -30,12 +31,26 @@ export interface CompletionRequest {
   maxTokens?: number;
   temperature?: number;
   responseFormat?: 'text' | 'json';
+  runId?: string; // For run-scoped usage tracking
 }
 
 export interface CompletionResult {
   content: string;
   usage: ModelUsage;
   finishReason: string;
+}
+
+// LLM Call Record for debug purposes
+export interface LlmCallRecord {
+  callType: LlmCallType;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  response: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+  createdAt: Date;
 }
 
 // ============================================================================
@@ -82,7 +97,9 @@ export class ModelRouter {
   private client: OpenAI | null = null;
   private logger: Logger;
   private config = getConfig();
-  private usageHistory: ModelUsage[] = [];
+  // Run-scoped history storage to avoid concurrency issues with the singleton
+  private usageHistoryByRun: Map<string, ModelUsage[]> = new Map();
+  private llmCallHistoryByRun: Map<string, LlmCallRecord[]> = new Map();
 
   constructor() {
     this.logger = createLogger('ModelRouter');
@@ -99,6 +116,62 @@ export class ModelRouter {
     } else {
       this.logger.warn('OpenAI API key not configured, LLM features will be disabled');
     }
+  }
+
+  /**
+   * Initialize history tracking for a run
+   */
+  initRunHistory(runId: string): void {
+    if (!this.usageHistoryByRun.has(runId)) {
+      this.usageHistoryByRun.set(runId, []);
+    }
+    if (!this.llmCallHistoryByRun.has(runId)) {
+      this.llmCallHistoryByRun.set(runId, []);
+    }
+  }
+
+  /**
+   * Record an LLM call for debugging purposes (run-scoped)
+   */
+  private recordLlmCall(
+    runId: string,
+    callType: LlmCallType,
+    model: string,
+    systemPrompt: string,
+    userPrompt: string,
+    response: string,
+    inputTokens: number,
+    outputTokens: number,
+    latencyMs: number
+  ): void {
+    let history = this.llmCallHistoryByRun.get(runId);
+    if (!history) {
+      history = [];
+      this.llmCallHistoryByRun.set(runId, history);
+    }
+    history.push({
+      callType,
+      model,
+      systemPrompt,
+      userPrompt,
+      response,
+      inputTokens,
+      outputTokens,
+      latencyMs,
+      createdAt: new Date(),
+    });
+  }
+
+  /**
+   * Record usage for a specific run
+   */
+  private recordUsage(runId: string, usage: ModelUsage): void {
+    let history = this.usageHistoryByRun.get(runId);
+    if (!history) {
+      history = [];
+      this.usageHistoryByRun.set(runId, history);
+    }
+    history.push(usage);
   }
 
   /**
@@ -162,7 +235,10 @@ export class ModelRouter {
       latencyMs: timer.elapsed(),
     };
 
-    this.usageHistory.push(usage);
+    // Track usage if runId provided (for run-scoped history)
+    if (request.runId) {
+      this.recordUsage(request.runId, usage);
+    }
 
     this.logger.debug(
       { 
@@ -183,8 +259,10 @@ export class ModelRouter {
    */
   async classifyQuery(
     query: string,
-    systemPrompt: string
+    systemPrompt: string,
+    runId?: string
   ): Promise<{ intent: string; usage: ModelUsage }> {
+    const modelConfig = this.getModelConfig('fast');
     const result = await this.complete({
       messages: [
         { role: 'system', content: systemPrompt },
@@ -193,7 +271,23 @@ export class ModelRouter {
       tier: 'fast',
       maxTokens: 50,
       temperature: 0.1,
+      runId,
     });
+
+    // Record the LLM call for debugging (run-scoped)
+    if (runId) {
+      this.recordLlmCall(
+        runId,
+        'query_classification',
+        modelConfig.model,
+        systemPrompt,
+        query,
+        result.content,
+        result.usage.inputTokens,
+        result.usage.outputTokens,
+        result.usage.latencyMs
+      );
+    }
 
     return {
       intent: result.content.trim().toLowerCase(),
@@ -207,25 +301,42 @@ export class ModelRouter {
   async rankCommitsLLM(
     query: string,
     commits: Array<{ sha: string; title: string; messageSnippet?: string }>,
-    systemPrompt: string
+    systemPrompt: string,
+    runId?: string
   ): Promise<{ rankings: Array<{ sha: string; score: number; reason: string }>; usage: ModelUsage }> {
     const commitList = commits
       .map((c) => `- ${c.sha.slice(0, 8)}: ${c.title}`)
       .join('\n');
 
+    const userPrompt = `Question: ${query}\n\nCommits:\n${commitList}\n\nReturn JSON array of top relevant commits with scores (0-1) and reasons.`;
+    const modelConfig = this.getModelConfig('fast');
+
     const result = await this.complete({
       messages: [
         { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `Question: ${query}\n\nCommits:\n${commitList}\n\nReturn JSON array of top relevant commits with scores (0-1) and reasons.`,
-        },
+        { role: 'user', content: userPrompt },
       ],
       tier: 'fast',
       maxTokens: 1000,
       temperature: 0.3,
       responseFormat: 'json',
+      runId,
     });
+
+    // Record the LLM call for debugging (run-scoped)
+    if (runId) {
+      this.recordLlmCall(
+        runId,
+        'ranking',
+        modelConfig.model,
+        systemPrompt,
+        userPrompt,
+        result.content,
+        result.usage.inputTokens,
+        result.usage.outputTokens,
+        result.usage.latencyMs
+      );
+    }
 
     try {
       const rankings = JSON.parse(result.content);
@@ -243,34 +354,75 @@ export class ModelRouter {
     query: string,
     context: string,
     systemPrompt: string,
-    tier: ModelTier = 'strong'
+    tier: ModelTier = 'strong',
+    runId?: string
   ): Promise<CompletionResult> {
-    return this.complete({
+    const userPrompt = `Question: ${query}\n\nContext and Evidence:\n${context}`;
+    const modelConfig = this.getModelConfig(tier);
+
+    const result = await this.complete({
       messages: [
         { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `Question: ${query}\n\nContext and Evidence:\n${context}`,
-        },
+        { role: 'user', content: userPrompt },
       ],
       tier,
       maxTokens: 4096,
       temperature: 0.5,
+      runId,
     });
+
+    // Record the LLM call for debugging (run-scoped)
+    if (runId) {
+      this.recordLlmCall(
+        runId,
+        'answer_synthesis',
+        modelConfig.model,
+        systemPrompt,
+        userPrompt,
+        result.content,
+        result.usage.inputTokens,
+        result.usage.outputTokens,
+        result.usage.latencyMs
+      );
+    }
+
+    return result;
   }
 
   /**
-   * Get usage history
+   * Get usage history for a specific run
    */
-  getUsageHistory(): ModelUsage[] {
-    return [...this.usageHistory];
+  getUsageHistory(runId: string): ModelUsage[] {
+    return [...(this.usageHistoryByRun.get(runId) ?? [])];
   }
 
   /**
-   * Clear usage history
+   * Clear usage history for a specific run
    */
-  clearUsageHistory(): void {
-    this.usageHistory = [];
+  clearUsageHistory(runId: string): void {
+    this.usageHistoryByRun.delete(runId);
+  }
+
+  /**
+   * Get LLM call history for a specific run
+   */
+  getLlmCallHistory(runId: string): LlmCallRecord[] {
+    return [...(this.llmCallHistoryByRun.get(runId) ?? [])];
+  }
+
+  /**
+   * Clear LLM call history for a specific run
+   */
+  clearLlmCallHistory(runId: string): void {
+    this.llmCallHistoryByRun.delete(runId);
+  }
+
+  /**
+   * Clear all history for a specific run (convenience method)
+   */
+  clearRunHistory(runId: string): void {
+    this.usageHistoryByRun.delete(runId);
+    this.llmCallHistoryByRun.delete(runId);
   }
 }
 

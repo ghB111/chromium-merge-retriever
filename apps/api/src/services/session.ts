@@ -12,6 +12,7 @@ import {
   ValidationError,
   createLogger,
   type Logger,
+  type LlmCallDebugInfo,
 } from '@chromium-search/shared';
 
 import { parseRangeFromGitilesUrl } from '@chromium-search/tools';
@@ -241,6 +242,29 @@ export class SessionService {
         completedAt: status !== 'running' ? new Date() : undefined,
       },
     });
+  }
+
+  /**
+   * Record LLM calls for an agent run
+   */
+  async recordLlmCalls(runId: string, llmCalls: LlmCallDebugInfo[]): Promise<void> {
+    if (!llmCalls || llmCalls.length === 0) return;
+
+    await this.prisma.llmCall.createMany({
+      data: llmCalls.map(call => ({
+        runId,
+        callType: call.callType,
+        model: call.model,
+        systemPrompt: call.systemPrompt,
+        userPrompt: call.userPrompt,
+        response: call.response,
+        inputTokens: call.inputTokens,
+        outputTokens: call.outputTokens,
+        latencyMs: call.latencyMs,
+      })),
+    });
+
+    this.logger.debug({ runId, count: llmCalls.length }, 'Recorded LLM calls');
   }
 }
 

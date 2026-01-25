@@ -49,8 +49,29 @@ model AgentRun {
   errorMessage   String?
   createdAt      DateTime @default(now())
   completedAt    DateTime?
+  
+  llmCalls       LlmCall[]
 
   @@index([sessionId])
+  @@index([createdAt])
+}
+
+// LLM Call table for storing prompts and responses sent to LLMs
+model LlmCall {
+  id             String   @id @default(uuid())
+  runId          String
+  run            AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  callType       String   // 'query_classification' | 'ranking' | 'answer_synthesis' | 'other'
+  model          String   // Model name used
+  systemPrompt   String   @db.Text // System prompt sent
+  userPrompt     String   @db.Text // User prompt sent
+  response       String   @db.Text // LLM response
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  latencyMs      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([runId])
   @@index([createdAt])
 }
 
