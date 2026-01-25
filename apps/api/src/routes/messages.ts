@@ -6,7 +6,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { getChatService } from '../services/chat.js';
-import { ValidationError } from '@chromium-search/shared';
+import { ValidationError, getConfig } from '@chromium-search/shared';
 
 // ============================================================================
 // Validation Schemas
@@ -31,7 +31,8 @@ export function createMessagesRouter(prisma: PrismaClient): Router {
   router.post('/:sessionId/messages', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { sessionId } = req.params;
-      const includeDebug = req.headers['x-include-debug'] === 'true';
+      const includeDebug =
+        req.headers['x-include-debug'] === 'true' || getConfig().debug.enabled;
 
       // Validate request body
       const parseResult = sendMessageSchema.safeParse(req.body);
