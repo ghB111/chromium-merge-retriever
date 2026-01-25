@@ -20,7 +20,7 @@ export function useChat(): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
+  const [showDebug, setShowDebug] = useState(true);
 
   // Auto-create session on mount
   useEffect(() => {
