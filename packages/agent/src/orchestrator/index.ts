@@ -94,6 +94,9 @@ export class AgentOrchestrator {
     const repoBaseUrl = this.config.gitiles.fullRepoUrl;
     const toolContext = createToolContext(repoBaseUrl, this.config.budgets);
 
+    // Initialize run-scoped history tracking
+    this.modelRouter.initRunHistory(runId);
+
     try {
       // Run with timeout
       const result = await withTimeout(
@@ -107,8 +110,8 @@ export class AgentOrchestrator {
         'Agent run completed'
       );
 
-      // Build result
-      const llmCalls = this.modelRouter.getLlmCallHistory();
+      // Build result (using run-scoped history)
+      const llmCalls = this.modelRouter.getLlmCallHistory(runId);
       return {
         answer: result.answer,
         evidence: result.evidence,
@@ -117,7 +120,7 @@ export class AgentOrchestrator {
               runId,
               toolCalls: toolContext.toolCalls,
               rankedCandidates: result.rankedCandidates,
-              modelUsage: this.modelRouter.getUsageHistory(),
+              modelUsage: this.modelRouter.getUsageHistory(runId),
               llmCalls: llmCalls.map(call => ({
                 callType: call.callType,
                 model: call.model,
@@ -139,8 +142,8 @@ export class AgentOrchestrator {
         toolContext.toolCalls
       );
     } finally {
-      this.modelRouter.clearUsageHistory();
-      this.modelRouter.clearLlmCallHistory();
+      // Clean up run-scoped history (only affects this run, not concurrent requests)
+      this.modelRouter.clearRunHistory(runId);
     }
   }
 
@@ -148,7 +151,7 @@ export class AgentOrchestrator {
    * Main agent execution loop
    */
   private async executeAgentLoop(
-    _runId: string,
+    runId: string,
     scope: SessionScope,
     query: string,
     context: ToolContext
@@ -159,7 +162,7 @@ export class AgentOrchestrator {
 
     if (this.modelRouter.isAvailable()) {
       try {
-        const classification = await this.modelRouter.classifyQuery(query, QUERY_CLASSIFICATION_PROMPT);
+        const classification = await this.modelRouter.classifyQuery(query, QUERY_CLASSIFICATION_PROMPT, runId);
         intent = this.mapIntentString(classification.intent);
       } catch (error) {
         this.logger.warn({ error: String(error) }, 'Query classification failed, using heuristics');
@@ -222,7 +225,8 @@ export class AgentOrchestrator {
                 messageSnippet: commit?.messageSnippet,
               };
             }),
-            RANKING_PROMPT
+            RANKING_PROMPT,
+            runId
           );
 
           if (reranked.rankings.length > 0) {
@@ -259,7 +263,7 @@ export class AgentOrchestrator {
     }
 
     // Step 5: Synthesize answer
-    const answer = await this.synthesizeAnswer(query, intent, retrieved, context);
+    const answer = await this.synthesizeAnswer(query, intent, retrieved, context, runId);
 
     // Step 6: Build evidence
     const evidence = this.buildEvidence(retrieved, topK);
@@ -323,7 +327,8 @@ export class AgentOrchestrator {
     query: string,
     intent: QueryIntent,
     retrieved: RetrievedData,
-    _context: ToolContext
+    _context: ToolContext,
+    runId: string
   ): Promise<string> {
     // Build context for answer generation
     const contextParts: string[] = [];
@@ -396,7 +401,8 @@ export class AgentOrchestrator {
           query,
           evidenceContext,
           ANSWER_SYNTHESIS_PROMPT,
-          complexity
+          complexity,
+          runId
         );
         return result.content;
       } catch (error) {
