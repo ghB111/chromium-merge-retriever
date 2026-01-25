@@ -13,7 +13,7 @@ import {
   RefreshCw,
   Link as LinkIcon,
   MessageSquare,
-  FileText,
+  ChevronRight,
   Clock,
   Terminal
 } from 'lucide-react';
