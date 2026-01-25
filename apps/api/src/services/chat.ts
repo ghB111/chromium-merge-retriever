@@ -88,7 +88,9 @@ export class ChatService {
         'completed',
         durationMs,
         result.debug?.toolCalls.length ?? 0,
-        result.debug?.toolCalls.reduce((sum: number, tc: { bytes: number }) => sum + tc.bytes, 0) ?? 0
+        result.debug?.toolCalls.reduce((sum: number, tc: { bytes: number }) => sum + tc.bytes, 0) ?? 0,
+        undefined,
+        result.debug?.llmLogs
       );
 
       this.logger.info(

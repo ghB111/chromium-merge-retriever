@@ -342,6 +342,65 @@ export function createAdminRouter(prisma: PrismaClient): Router {
     }
   });
 
+  /**
+   * GET /v1/admin/sessions
+   * List recent sessions
+   */
+  router.get('/sessions', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const take = Number(req.query.limit) || 20;
+      const skip = Number(req.query.offset) || 0;
+
+      const sessions = await prisma.session.findMany({
+        take,
+        skip,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: {
+            select: { messages: true, runs: true }
+          }
+        }
+      });
+
+      res.json({ sessions });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * GET /v1/admin/sessions/:sessionId
+   * Get session details with messages, runs, and logs
+   */
+  router.get('/sessions/:sessionId', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { sessionId } = req.params;
+
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+          messages: {
+            orderBy: { createdAt: 'asc' }
+          },
+          runs: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              llmLogs: true
+            }
+          }
+        }
+      });
+
+      if (!session) {
+        throw new NotFoundError(`Session not found: ${sessionId}`);
+      }
+
+      res.json({ session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   return router;
 }
 

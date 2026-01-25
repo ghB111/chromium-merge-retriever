@@ -49,9 +49,36 @@ model AgentRun {
   errorMessage   String?
   createdAt      DateTime @default(now())
   completedAt    DateTime?
+  
+  llmLogs        LlmLog[]
 
   @@index([sessionId])
   @@index([createdAt])
+}
+
+// LlmLog table for storing LLM prompts and responses
+model LlmLog {
+  id              String   @id @default(uuid())
+  runId           String
+  run             AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  
+  // Request details
+  model           String
+  systemPrompt    String?  @db.Text
+  userPrompt      String   @db.Text
+  temperature     Float
+  maxTokens       Int
+  
+  // Response details
+  response        String   @db.Text
+  inputTokens     Int
+  outputTokens    Int
+  latencyMs       Int
+  finishReason    String?
+  
+  createdAt       DateTime @default(now())
+
+  @@index([runId])
 }
 
 // Pre-saved commit ranges configured by admin

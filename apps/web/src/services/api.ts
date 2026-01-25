@@ -182,6 +182,20 @@ export const api = {
     });
     return handleResponse<{ progress: DownloadProgressUpdate }>(response);
   },
+
+  async getSessions(limit = 20, offset = 0): Promise<{ sessions: any[] }> {
+    const response = await fetch(`${API_BASE}/admin/sessions?limit=${limit}&offset=${offset}`, {
+      headers: getAdminHeaders(),
+    });
+    return handleResponse<{ sessions: any[] }>(response);
+  },
+
+  async getAdminSession(sessionId: string): Promise<{ session: any }> {
+    const response = await fetch(`${API_BASE}/admin/sessions/${sessionId}`, {
+      headers: getAdminHeaders(),
+    });
+    return handleResponse<{ session: any }>(response);
+  },
 };
 
 export { ApiError };

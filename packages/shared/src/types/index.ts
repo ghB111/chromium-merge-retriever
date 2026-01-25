@@ -123,6 +123,7 @@ export interface DebugInfo {
   toolCalls: ToolCallRecord[];
   rankedCandidates: RankedCandidate[];
   modelUsage?: ModelUsage[];
+  llmLogs?: LlmLog[];
 }
 
 export interface ModelUsage {
@@ -130,6 +131,19 @@ export interface ModelUsage {
   inputTokens: number;
   outputTokens: number;
   latencyMs: number;
+}
+
+export interface LlmLog {
+  model: string;
+  systemPrompt?: string;
+  userPrompt: string;
+  temperature: number;
+  maxTokens: number;
+  response: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+  finishReason?: string;
 }
 
 // ============================================================================

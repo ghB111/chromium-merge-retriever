@@ -117,6 +117,7 @@ export class AgentOrchestrator {
               toolCalls: toolContext.toolCalls,
               rankedCandidates: result.rankedCandidates,
               modelUsage: this.modelRouter.getUsageHistory(),
+              llmLogs: this.modelRouter.getLogs(),
             }
           : { runId, toolCalls: [], rankedCandidates: [] },
       };
@@ -125,7 +126,8 @@ export class AgentOrchestrator {
       return this.createErrorResult(
         runId,
         `Error processing query: ${error instanceof Error ? error.message : String(error)}`,
-        toolContext.toolCalls
+        toolContext.toolCalls,
+        this.modelRouter.getLogs()
       );
     } finally {
       this.modelRouter.clearUsageHistory();

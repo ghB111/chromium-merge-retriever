@@ -9,6 +9,7 @@ import {
   createTimer,
   type Logger,
   type ModelUsage,
+  type LlmLog,
 } from '@chromium-search/shared';
 
 // ============================================================================
@@ -83,6 +84,7 @@ export class ModelRouter {
   private logger: Logger;
   private config = getConfig();
   private usageHistory: ModelUsage[] = [];
+  private logHistory: LlmLog[] = [];
 
   constructor() {
     this.logger = createLogger('ModelRouter');
@@ -162,7 +164,24 @@ export class ModelRouter {
       latencyMs: timer.elapsed(),
     };
 
+    const systemPrompt = request.messages.find(m => m.role === 'system')?.content as string | undefined;
+    const userPrompt = request.messages.find(m => m.role === 'user')?.content as string | undefined || JSON.stringify(request.messages);
+
+    const log: LlmLog = {
+      model: modelConfig.model,
+      systemPrompt,
+      userPrompt,
+      temperature: request.temperature ?? modelConfig.temperature,
+      maxTokens: request.maxTokens ?? modelConfig.maxTokens,
+      response: content,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      latencyMs: usage.latencyMs,
+      finishReason,
+    };
+
     this.usageHistory.push(usage);
+    this.logHistory.push(log);
 
     this.logger.debug(
       { 
@@ -267,10 +286,18 @@ export class ModelRouter {
   }
 
   /**
+   * Get log history
+   */
+  getLogs(): LlmLog[] {
+    return [...this.logHistory];
+  }
+
+  /**
    * Clear usage history
    */
   clearUsageHistory(): void {
     this.usageHistory = [];
+    this.logHistory = [];
   }
 }
 

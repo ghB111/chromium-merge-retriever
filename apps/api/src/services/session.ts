@@ -12,6 +12,7 @@ import {
   ValidationError,
   createLogger,
   type Logger,
+  type LlmLog,
 } from '@chromium-search/shared';
 
 import { parseRangeFromGitilesUrl } from '@chromium-search/tools';
@@ -217,7 +218,8 @@ export class SessionService {
     durationMs?: number,
     toolCallCount?: number,
     bytesUsed?: number,
-    errorMessage?: string
+    errorMessage?: string,
+    llmLogs?: LlmLog[]
   ): Promise<void> {
     await this.prisma.agentRun.upsert({
       where: { id: runId },
@@ -231,6 +233,20 @@ export class SessionService {
         bytesUsed,
         errorMessage,
         completedAt: status !== 'running' ? new Date() : undefined,
+        llmLogs: llmLogs ? {
+          create: llmLogs.map(log => ({
+            model: log.model,
+            systemPrompt: log.systemPrompt,
+            userPrompt: log.userPrompt,
+            temperature: log.temperature,
+            maxTokens: log.maxTokens,
+            response: log.response,
+            inputTokens: log.inputTokens,
+            outputTokens: log.outputTokens,
+            latencyMs: log.latencyMs,
+            finishReason: log.finishReason,
+          }))
+        } : undefined
       },
       update: {
         status,
@@ -239,6 +255,20 @@ export class SessionService {
         bytesUsed,
         errorMessage,
         completedAt: status !== 'running' ? new Date() : undefined,
+        llmLogs: llmLogs ? {
+          create: llmLogs.map(log => ({
+            model: log.model,
+            systemPrompt: log.systemPrompt,
+            userPrompt: log.userPrompt,
+            temperature: log.temperature,
+            maxTokens: log.maxTokens,
+            response: log.response,
+            inputTokens: log.inputTokens,
+            outputTokens: log.outputTokens,
+            latencyMs: log.latencyMs,
+            finishReason: log.finishReason,
+          }))
+        } : undefined
       },
     });
   }
