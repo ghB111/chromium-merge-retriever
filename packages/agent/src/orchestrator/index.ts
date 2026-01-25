@@ -22,6 +22,7 @@ import {
   type CommitSummary,
   type CommitDetails,
   type DiffExcerpt,
+  type LlmLog,
 } from '@chromium-search/shared';
 
 import {
@@ -489,7 +490,8 @@ export class AgentOrchestrator {
   private createErrorResult(
     runId: string,
     message: string,
-    toolCalls: ToolCallRecord[] = []
+    toolCalls: ToolCallRecord[] = [],
+    llmLogs: LlmLog[] = []
   ): AgentRunResult {
     return {
       answer: message,
@@ -498,6 +500,7 @@ export class AgentOrchestrator {
         runId,
         toolCalls,
         rankedCandidates: [],
+        llmLogs,
       },
     };
   }
