@@ -27,12 +27,8 @@ import {
 import {
   createToolContext,
   listCommits,
-  readFileAtRevision,
   batchGetCommitDetails,
   batchGetDiffExcerpts,
-  rankCommits,
-  selectTopCandidates,
-  analyzeQuery,
   type ToolContext,
 } from '@chromium-search/tools';
 
@@ -156,23 +152,30 @@ export class AgentOrchestrator {
     query: string,
     context: ToolContext
   ): Promise<{ answer: string; evidence: Evidence[]; rankedCandidates: RankedCandidate[] }> {
-    // Step 1: Analyze query
-    const queryAnalysis = analyzeQuery(query);
-    let intent: QueryIntent = 'general';
-
-    if (this.modelRouter.isAvailable()) {
-      try {
-        const classification = await this.modelRouter.classifyQuery(query, QUERY_CLASSIFICATION_PROMPT, runId);
-        intent = this.mapIntentString(classification.intent);
-      } catch (error) {
-        this.logger.warn({ error: String(error) }, 'Query classification failed, using heuristics');
-        intent = this.inferIntentFromAnalysis(queryAnalysis);
-      }
-    } else {
-      intent = this.inferIntentFromAnalysis(queryAnalysis);
+    // Check if LLM is available - required for classification and ranking
+    if (!this.modelRouter.isAvailable()) {
+      return {
+        answer: 'LLM is not available. Please configure an OpenAI API key to use this service.',
+        evidence: [],
+        rankedCandidates: [],
+      };
     }
 
-    this.logger.debug({ intent, queryAnalysis }, 'Query analyzed');
+    // Step 1: Classify query intent using LLM only (no heuristics)
+    let intent: QueryIntent;
+
+    try {
+      const classification = await this.modelRouter.classifyQuery(query, QUERY_CLASSIFICATION_PROMPT, runId);
+      intent = this.mapIntentString(classification.intent);
+      this.logger.debug({ intent }, 'Query intent classified by LLM');
+    } catch (error) {
+      this.logger.error({ error: String(error) }, 'Query classification failed');
+      return {
+        answer: `Failed to classify query: ${error instanceof Error ? error.message : String(error)}`,
+        evidence: [],
+        rankedCandidates: [],
+      };
+    }
 
     // Step 2: Retrieve commits
     const retrieved: RetrievedData = {
@@ -203,63 +206,53 @@ export class AgentOrchestrator {
       this.logger.debug({ count: retrieved.commits.length }, 'Retrieved commits');
     }
 
-    // Step 3: Rank candidates
+    // Step 3: Rank candidates using LLM only (no heuristics, no slicing)
     if (retrieved.commits.length > 0) {
-      // Heuristic ranking
-      retrieved.rankedCandidates = rankCommits(retrieved.commits, {
-        query,
-        pathScope: scope.pathScope,
-      });
+      try {
+        // Send ALL commits to LLM for ranking (no context limit slicing)
+        const ranked = await this.modelRouter.rankCommitsLLM(
+          query,
+          retrieved.commits.map((commit) => ({
+            sha: commit.sha,
+            title: commit.title,
+            messageSnippet: commit.messageSnippet,
+          })),
+          RANKING_PROMPT,
+          runId
+        );
 
-      // Optional LLM reranking of top candidates
-      if (this.modelRouter.isAvailable() && retrieved.rankedCandidates.length > 20) {
-        try {
-          const topForRerank = retrieved.rankedCandidates.slice(0, 50);
-          const reranked = await this.modelRouter.rankCommitsLLM(
-            query,
-            topForRerank.map((r) => {
-              const commit = retrieved.commits.find((c) => c.sha === r.sha);
-              return {
-                sha: r.sha,
-                title: commit?.title ?? '',
-                messageSnippet: commit?.messageSnippet,
-              };
-            }),
-            RANKING_PROMPT,
-            runId
-          );
-
-          if (reranked.rankings.length > 0) {
-            // Merge LLM rankings with heuristic rankings
-            const llmRankMap = new Map(reranked.rankings.map((r) => [r.sha.slice(0, 8), r]));
-            retrieved.rankedCandidates = retrieved.rankedCandidates.map((r) => {
-              const llmRank = llmRankMap.get(r.sha.slice(0, 8));
-              if (llmRank) {
-                return {
-                  sha: r.sha,
-                  score: (r.score + llmRank.score) / 2,
-                  reason: `${r.reason}; LLM: ${llmRank.reason}`,
-                };
-              }
-              return r;
-            });
-            retrieved.rankedCandidates.sort((a, b) => b.score - a.score);
-          }
-        } catch (error) {
-          this.logger.warn({ error: String(error) }, 'LLM reranking failed');
+        if (ranked.rankings.length > 0) {
+          // Use LLM rankings directly
+          retrieved.rankedCandidates = ranked.rankings.map((r) => ({
+            sha: this.expandSha(r.sha, retrieved.commits),
+            score: r.score,
+            reason: r.reason,
+          }));
+          this.logger.debug({ count: retrieved.rankedCandidates.length }, 'LLM ranked commits');
+        } else {
+          this.logger.warn('LLM returned no rankings, using commit order');
+          // Fallback: use original order with neutral scores
+          retrieved.rankedCandidates = retrieved.commits.map((c, idx) => ({
+            sha: c.sha,
+            score: 1 - (idx / retrieved.commits.length),
+            reason: 'default order',
+          }));
         }
+      } catch (error) {
+        this.logger.error({ error: String(error) }, 'LLM ranking failed');
+        return {
+          answer: `Failed to rank commits: ${error instanceof Error ? error.message : String(error)}`,
+          evidence: [],
+          rankedCandidates: [],
+        };
       }
     }
 
-    // Step 4: Deep dive based on intent
-    const topK = selectTopCandidates(
-      retrieved.rankedCandidates,
-      this.getDeepDiveCount(intent),
-      0.1
-    );
+    // Step 4: Deep dive into top candidates
+    const topK = retrieved.rankedCandidates.slice(0, this.getDeepDiveCount(intent));
 
     if (topK.length > 0) {
-      await this.deepDive(context, topK, retrieved, intent, queryAnalysis);
+      await this.deepDive(context, topK, retrieved);
     }
 
     // Step 5: Synthesize answer
@@ -276,18 +269,25 @@ export class AgentOrchestrator {
   }
 
   /**
+   * Expand a short SHA to full SHA by matching against commits
+   */
+  private expandSha(shortSha: string, commits: CommitSummary[]): string {
+    const normalized = shortSha.toLowerCase();
+    const match = commits.find((c) => c.sha.toLowerCase().startsWith(normalized));
+    return match?.sha ?? shortSha;
+  }
+
+  /**
    * Deep dive into top candidates
    */
   private async deepDive(
     context: ToolContext,
     candidates: RankedCandidate[],
-    retrieved: RetrievedData,
-    intent: QueryIntent,
-    queryAnalysis: ReturnType<typeof analyzeQuery>
+    retrieved: RetrievedData
   ): Promise<void> {
     const shas = candidates.map((c) => c.sha);
 
-    // Get commit details
+    // Get commit details for all candidates
     const detailsResult = await batchGetCommitDetails(context, shas);
     if (detailsResult.details) {
       for (const detail of detailsResult.details) {
@@ -295,27 +295,15 @@ export class AgentOrchestrator {
       }
     }
 
-    // For regression/file queries, get diffs
-    if (intent === 'regression' || intent === 'file_change') {
-      const diffsResult = await batchGetDiffExcerpts(
-        context,
-        shas.slice(0, 5), // Limit diff fetches
-        { fileGlobs: queryAnalysis.potentialPaths.length > 0 ? queryAnalysis.potentialPaths : undefined }
-      );
-      if (diffsResult.diffs) {
-        for (const diff of diffsResult.diffs) {
-          retrieved.diffs.set(diff.sha, diff);
-        }
-      }
-    }
-
-    // For symbol lookup, try to read relevant files
-    if (intent === 'symbol_lookup' && queryAnalysis.potentialPaths.length > 0) {
-      for (const path of queryAnalysis.potentialPaths.slice(0, 2)) {
-        const fileResult = await readFileAtRevision(context, path, 'HEAD');
-        if (fileResult.success && fileResult.file) {
-          retrieved.files.set(path, fileResult.file.excerpt);
-        }
+    // Fetch diffs for ALL intents (not just regression/file_change)
+    // Increased limit from 5 to 10 commits
+    const diffsResult = await batchGetDiffExcerpts(
+      context,
+      shas.slice(0, 10)
+    );
+    if (diffsResult.diffs) {
+      for (const diff of diffsResult.diffs) {
+        retrieved.diffs.set(diff.sha, diff);
       }
     }
   }
@@ -530,17 +518,6 @@ export class AgentOrchestrator {
       general: 'general',
     };
     return mapping[intent] ?? 'general';
-  }
-
-  /**
-   * Infer intent from query analysis
-   */
-  private inferIntentFromAnalysis(analysis: ReturnType<typeof analyzeQuery>): QueryIntent {
-    if (analysis.isRegressionQuery) return 'regression';
-    if (analysis.isSummaryQuery) return 'summary';
-    if (analysis.isFileQuery) return 'file_change';
-    if (analysis.potentialSymbols.length > 0) return 'symbol_lookup';
-    return 'general';
   }
 
   /**
