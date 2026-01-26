@@ -62,6 +62,13 @@ export interface AgentLoopResult {
   usage: ModelUsage;
 }
 
+// Agent tool call record for debug purposes
+export interface AgentToolCallRecord {
+  name: string;
+  arguments: string;
+  result: string;
+}
+
 // LLM Call Record for debug purposes
 export interface LlmCallRecord {
   callType: LlmCallType;
@@ -73,6 +80,8 @@ export interface LlmCallRecord {
   outputTokens: number;
   latencyMs: number;
   createdAt: Date;
+  // For agent_exploration calls, track the tool calls made
+  toolCalls?: AgentToolCallRecord[];
 }
 
 // ============================================================================
@@ -163,7 +172,8 @@ export class ModelRouter {
     response: string,
     inputTokens: number,
     outputTokens: number,
-    latencyMs: number
+    latencyMs: number,
+    toolCalls?: AgentToolCallRecord[]
   ): void {
     let history = this.llmCallHistoryByRun.get(runId);
     if (!history) {
@@ -180,7 +190,36 @@ export class ModelRouter {
       outputTokens,
       latencyMs,
       createdAt: new Date(),
+      toolCalls,
     });
+  }
+
+  /**
+   * Record an agent exploration call with tool calls (public method for orchestrator)
+   */
+  recordAgentExplorationCall(
+    runId: string,
+    model: string,
+    systemPrompt: string,
+    userPrompt: string,
+    response: string,
+    inputTokens: number,
+    outputTokens: number,
+    latencyMs: number,
+    toolCalls: AgentToolCallRecord[]
+  ): void {
+    this.recordLlmCall(
+      runId,
+      'agent_exploration',
+      model,
+      systemPrompt,
+      userPrompt,
+      response,
+      inputTokens,
+      outputTokens,
+      latencyMs,
+      toolCalls
+    );
   }
 
   /**

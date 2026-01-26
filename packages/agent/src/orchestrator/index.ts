@@ -226,6 +226,7 @@ export class AgentOrchestrator {
                 inputTokens: call.inputTokens,
                 outputTokens: call.outputTokens,
                 latencyMs: call.latencyMs,
+                toolCalls: call.toolCalls,
               })),
             }
           : { runId, toolCalls: [], rankedCandidates: [] },
@@ -401,10 +402,12 @@ export class AgentOrchestrator {
       .replace('{commit_count}', String(retrieved.commits.length))
       .replace('{sample_commits}', sampleCommits);
 
+    const userPrompt = `User question: ${query}\n\nPlease search for and identify commits relevant to this question.`;
+
     // Initialize conversation
     const messages: OpenAI.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `User question: ${query}\n\nPlease search for and identify commits relevant to this question.` },
+      { role: 'user', content: userPrompt },
     ];
 
     while (iteration < maxIterations) {
@@ -423,12 +426,24 @@ export class AgentOrchestrator {
 
       // Check if LLM wants to call tools
       if (!result.toolCalls || result.toolCalls.length === 0) {
-        // LLM is done exploring
+        // LLM is done exploring - record final response
+        this.modelRouter.recordAgentExplorationCall(
+          runId,
+          this.config.openai.fastModel,
+          systemPrompt,
+          `[Iteration ${iteration}] Agent finished exploring`,
+          result.content || '(no content)',
+          result.usage.inputTokens,
+          result.usage.outputTokens,
+          result.usage.latencyMs,
+          []
+        );
         this.logger.debug({ content: result.content?.slice(0, 100) }, 'Agent finished exploring');
         break;
       }
 
-      // Process tool calls
+      // Process tool calls and collect results for debugging
+      const toolCallRecords: Array<{ name: string; arguments: string; result: string }> = [];
       const toolResults: OpenAI.ChatCompletionMessageParam[] = [];
       
       // Add assistant message with tool calls
@@ -446,12 +461,32 @@ export class AgentOrchestrator {
           relevantCommits
         );
 
+        // Record for debugging
+        toolCallRecords.push({
+          name: toolCall.function.name,
+          arguments: toolCall.function.arguments,
+          result: toolResult,
+        });
+
         toolResults.push({
           role: 'tool',
           tool_call_id: toolCall.id,
           content: toolResult,
         });
       }
+
+      // Record this iteration's exploration with tool calls
+      this.modelRouter.recordAgentExplorationCall(
+        runId,
+        this.config.openai.fastModel,
+        systemPrompt,
+        `[Iteration ${iteration}] Tool calls: ${result.toolCalls.map(tc => tc.function.name).join(', ')}`,
+        result.content || '(tool calls only)',
+        result.usage.inputTokens,
+        result.usage.outputTokens,
+        result.usage.latencyMs,
+        toolCallRecords
+      );
 
       // Add tool results to conversation
       messages.push(...toolResults);

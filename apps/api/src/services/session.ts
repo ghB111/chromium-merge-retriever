@@ -261,6 +261,7 @@ export class SessionService {
         inputTokens: call.inputTokens,
         outputTokens: call.outputTokens,
         latencyMs: call.latencyMs,
+        toolCalls: call.toolCalls ? JSON.parse(JSON.stringify(call.toolCalls)) : null,
       })),
     });
 

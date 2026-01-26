@@ -61,7 +61,7 @@ model LlmCall {
   id             String   @id @default(uuid())
   runId          String
   run            AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  callType       String   // 'query_classification' | 'ranking' | 'answer_synthesis' | 'other'
+  callType       String   // 'query_classification' | 'ranking' | 'answer_synthesis' | 'agent_exploration' | 'other'
   model          String   // Model name used
   systemPrompt   String   @db.Text // System prompt sent
   userPrompt     String   @db.Text // User prompt sent
@@ -69,6 +69,7 @@ model LlmCall {
   inputTokens    Int      @default(0)
   outputTokens   Int      @default(0)
   latencyMs      Int      @default(0)
+  toolCalls      Json?    // For agent_exploration: array of {name, arguments, result}
   createdAt      DateTime @default(now())
 
   @@index([runId])

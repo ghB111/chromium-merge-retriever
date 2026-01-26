@@ -135,6 +135,7 @@ export interface LlmCallDebugInfo {
   inputTokens: number;
   outputTokens: number;
   latencyMs: number;
+  toolCalls?: AgentToolCall[];
 }
 
 export interface ModelUsage {
@@ -339,7 +340,13 @@ export interface DownloadProgressUpdate {
 // LLM Call Types (for debug page)
 // ============================================================================
 
-export type LlmCallType = 'query_classification' | 'ranking' | 'answer_synthesis' | 'other';
+export type LlmCallType = 'query_classification' | 'ranking' | 'answer_synthesis' | 'agent_exploration' | 'other';
+
+export interface AgentToolCall {
+  name: string;
+  arguments: string;
+  result: string;
+}
 
 export interface LlmCall {
   id: string;
@@ -353,6 +360,8 @@ export interface LlmCall {
   outputTokens: number;
   latencyMs: number;
   createdAt: Date;
+  // For agent_exploration calls, track the tool calls made
+  toolCalls?: AgentToolCall[];
 }
 
 // ============================================================================
