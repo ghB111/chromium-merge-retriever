@@ -36,11 +36,23 @@ import { InMemoryCache, type Cache } from './cache.js';
 // Types
 // ============================================================================
 
+/**
+ * Use this constant with maxCommits to fetch all commits without any limit.
+ * @example
+ * client.listCommits({ ..., maxCommits: UNLIMITED_COMMITS })
+ */
+export const UNLIMITED_COMMITS = Infinity;
+
 export interface ListCommitsOptions {
   repoBaseUrl: string;
   startSha: string;
   endSha: string;
   pathScope?: string[];
+  /**
+   * Maximum number of commits to return.
+   * - If undefined, uses the default from config
+   * - Use `UNLIMITED_COMMITS` (Infinity) to fetch all commits without limit
+   */
   maxCommits?: number;
   /** If true, check for full/pre-cached commit list first (no limit) */
   preferFullCache?: boolean;
@@ -220,10 +232,10 @@ export class GitilesClient {
       return cached.slice(0, max);
     }
 
+    this.logger.info({ max }, 'Max commits');
     const commits: CommitSummary[] = [];
     let nextToken: string | undefined;
     let pageCount = 0;
-    const maxPages = 100; // Safety limit
     const pageSize = this.config.gitiles.pageSize;
 
     do {
@@ -245,7 +257,7 @@ export class GitilesClient {
 
       nextToken = response.next;
       pageCount++;
-    } while (nextToken && commits.length < max && pageCount < maxPages);
+    } while (nextToken && commits.length < max);
 
     this.logger.info({ count: commits.length, pages: pageCount }, 'Fetched commit list');
 

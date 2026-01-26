@@ -15,7 +15,7 @@ import {
   type CommitDetails,
 } from '@chromium-search/shared';
 
-import { getGitilesClient, CacheManager, type GitilesClient, type Cache } from '@chromium-search/tools';
+import { getGitilesClient, CacheManager, UNLIMITED_COMMITS, type GitilesClient, type Cache } from '@chromium-search/tools';
 
 // ============================================================================
 // Rate Limit Retry Configuration
@@ -130,7 +130,7 @@ export class DownloadService {
         repoBaseUrl,
         startSha,
         endSha,
-        maxCommits: 100000, // No practical limit for admin downloads
+        maxCommits: UNLIMITED_COMMITS, // No practical limit for admin downloads
       });
 
       totalCommits = commits.length;
