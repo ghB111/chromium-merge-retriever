@@ -208,7 +208,6 @@ export interface GitilesLogResponse {
 export type QueryIntent = 
   | 'summary'           // "what changed" summary
   | 'regression'        // "why regression" diagnosis
-  | 'symbol_lookup'     // symbol/class existence at old revision
   | 'file_change'       // file/component scoped change
   | 'general';          // general question
 
