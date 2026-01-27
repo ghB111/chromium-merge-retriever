@@ -24,7 +24,7 @@ services:
     ports:
       - "${API_PORT:-3000}:3000"
     env_file:
-      - ../../.env # Potentially an issue because this service knows too many variables
+      - ./.env # Potentially an issue because this service knows too many variables
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
