@@ -40,6 +40,15 @@ services:
       - MAX_TOOL_CALLS_PER_RUN=${MAX_TOOL_CALLS_PER_RUN:-12}
       - MAX_TOTAL_BYTES_PER_RUN=${MAX_TOTAL_BYTES_PER_RUN:-20000000}
       - RUN_TIMEOUT_MS=${RUN_TIMEOUT_MS:-110000}
+      # Repository source configuration
+      - REPO_SOURCE=${REPO_SOURCE:-gitiles}
+      - LOCAL_CHECKOUT_PATH=/data/checkouts
+      - LOCAL_GIT_BATCH_SIZE=${LOCAL_GIT_BATCH_SIZE:-100}
+    volumes:
+      # Mount local git checkouts from host machine (used when REPO_SOURCE=local)
+      # The host path should contain the git repository checkout
+      # e.g., for chromium/src, mount the checkout to /data/checkouts/chromium/src
+      - ${LOCAL_CHECKOUT_HOST_PATH:-./data/checkouts}:/data/checkouts:ro
     depends_on:
       postgres:
         condition: service_healthy
