@@ -551,6 +551,7 @@ function LlmCallCard({ call, isExpanded, onToggle }: LlmCallCardProps) {
     query_classification: 'Query Classification',
     ranking: 'Commit Ranking',
     answer_synthesis: 'Answer Synthesis',
+    agent_exploration: 'Agent Exploration',
     other: 'Other',
   };
 
@@ -558,8 +559,11 @@ function LlmCallCard({ call, isExpanded, onToggle }: LlmCallCardProps) {
     query_classification: 'bg-blue-100 text-blue-700',
     ranking: 'bg-orange-100 text-orange-700',
     answer_synthesis: 'bg-green-100 text-green-700',
+    agent_exploration: 'bg-purple-100 text-purple-700',
     other: 'bg-gray-100 text-gray-700',
   };
+
+  const hasToolCalls = call.toolCalls && call.toolCalls.length > 0;
 
   return (
     <div className="ml-6 border border-gray-200 rounded-lg overflow-hidden">
@@ -577,6 +581,11 @@ function LlmCallCard({ call, isExpanded, onToggle }: LlmCallCardProps) {
             {callTypeLabels[call.callType] || call.callType}
           </span>
           <span className="text-sm text-gray-600">{call.model}</span>
+          {hasToolCalls && (
+            <span className="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-700">
+              {call.toolCalls!.length} tool calls
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-500">
           <span>{call.inputTokens} in / {call.outputTokens} out tokens</span>
@@ -586,6 +595,37 @@ function LlmCallCard({ call, isExpanded, onToggle }: LlmCallCardProps) {
 
       {isExpanded && (
         <div className="p-4 space-y-4 bg-white">
+          {/* Tool Calls (for agent_exploration) */}
+          {hasToolCalls && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Agent Tool Calls</h4>
+              <div className="space-y-3">
+                {call.toolCalls!.map((tc, idx) => (
+                  <div key={idx} className="border border-purple-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-purple-50 flex items-center justify-between">
+                      <span className="font-medium text-sm text-purple-700">{tc.name}</span>
+                      <span className="text-xs text-purple-500">Tool #{idx + 1}</span>
+                    </div>
+                    <div className="p-3 space-y-2">
+                      <div>
+                        <span className="text-xs font-semibold text-gray-500">Arguments:</span>
+                        <div className="mt-1 bg-gray-50 rounded p-2 text-xs font-mono text-gray-700 overflow-x-auto">
+                          {formatJson(tc.arguments)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-gray-500">Result:</span>
+                        <div className="mt-1 bg-green-50 rounded p-2 text-xs font-mono text-gray-700 overflow-x-auto max-h-32 overflow-y-auto">
+                          {formatJson(tc.result)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* System Prompt */}
           <div>
             <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">System Prompt</h4>
@@ -613,4 +653,14 @@ function LlmCallCard({ call, isExpanded, onToggle }: LlmCallCardProps) {
       )}
     </div>
   );
+}
+
+// Helper to format JSON strings for display
+function formatJson(jsonStr: string): string {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return jsonStr;
+  }
 }

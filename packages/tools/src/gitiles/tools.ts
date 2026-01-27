@@ -402,6 +402,67 @@ export async function batchGetDiffExcerpts(
 }
 
 // ============================================================================
+// Tool: Search Commits
+// ============================================================================
+
+export interface SearchCommitsResult {
+  success: boolean;
+  matches?: Array<{
+    sha: string;
+    title: string;
+    messageSnippet?: string;
+    matchedIn: 'title' | 'message' | 'both';
+  }>;
+  count?: number;
+  error?: string;
+}
+
+/**
+ * Search through commits for keywords in title or message
+ * This operates on already-fetched commits (does not make network calls)
+ */
+export function searchCommits(
+  commits: CommitSummary[],
+  keywords: string[],
+  options?: { maxResults?: number; caseSensitive?: boolean }
+): SearchCommitsResult {
+  const { maxResults = 20, caseSensitive = false } = options ?? {};
+  
+  const normalizedKeywords = caseSensitive 
+    ? keywords 
+    : keywords.map(k => k.toLowerCase());
+  
+  const matches: SearchCommitsResult['matches'] = [];
+  
+  for (const commit of commits) {
+    if (matches.length >= maxResults) break;
+    
+    const title = caseSensitive ? commit.title : commit.title.toLowerCase();
+    const message = caseSensitive 
+      ? (commit.messageSnippet ?? '') 
+      : (commit.messageSnippet ?? '').toLowerCase();
+    
+    const titleMatch = normalizedKeywords.some(kw => title.includes(kw));
+    const messageMatch = normalizedKeywords.some(kw => message.includes(kw));
+    
+    if (titleMatch || messageMatch) {
+      matches.push({
+        sha: commit.sha,
+        title: commit.title,
+        messageSnippet: commit.messageSnippet,
+        matchedIn: titleMatch && messageMatch ? 'both' : titleMatch ? 'title' : 'message',
+      });
+    }
+  }
+  
+  return {
+    success: true,
+    matches,
+    count: matches.length,
+  };
+}
+
+// ============================================================================
 // Tool Registry
 // ============================================================================
 

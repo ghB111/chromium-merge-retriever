@@ -92,7 +92,13 @@ export interface DownloadProgressUpdate {
 }
 
 // Admin Debug Types
-export type LlmCallType = 'query_classification' | 'ranking' | 'answer_synthesis' | 'other';
+export type LlmCallType = 'query_classification' | 'ranking' | 'answer_synthesis' | 'agent_exploration' | 'other';
+
+export interface AgentToolCall {
+  name: string;
+  arguments: string;
+  result: string;
+}
 
 export interface LlmCall {
   id: string;
@@ -106,6 +112,8 @@ export interface LlmCall {
   outputTokens: number;
   latencyMs: number;
   createdAt: string;
+  // For agent_exploration calls, track the tool calls made
+  toolCalls?: AgentToolCall[];
 }
 
 export interface AdminSessionSummary {

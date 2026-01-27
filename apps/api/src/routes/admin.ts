@@ -467,6 +467,7 @@ export function createAdminRouter(prisma: PrismaClient): Router {
           outputTokens: call.outputTokens,
           latencyMs: call.latencyMs,
           createdAt: call.createdAt,
+          toolCalls: call.toolCalls as Array<{ name: string; arguments: string; result: string }> | undefined,
         })),
       }));
 

@@ -32,12 +32,41 @@ export interface CompletionRequest {
   temperature?: number;
   responseFormat?: 'text' | 'json';
   runId?: string; // For run-scoped usage tracking
+  tools?: OpenAI.ChatCompletionTool[];
 }
 
 export interface CompletionResult {
   content: string;
   usage: ModelUsage;
   finishReason: string;
+  toolCalls?: OpenAI.ChatCompletionMessageToolCall[];
+}
+
+// Agent tool definitions for OpenAI function calling
+export interface AgentToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: 'object';
+      properties: Record<string, { type: string; description: string; items?: { type: string } }>;
+      required?: string[];
+    };
+  };
+}
+
+export interface AgentLoopResult {
+  content: string;
+  toolCallsMade: Array<{ name: string; arguments: string; result: string }>;
+  usage: ModelUsage;
+}
+
+// Agent tool call record for debug purposes
+export interface AgentToolCallRecord {
+  name: string;
+  arguments: string;
+  result: string;
 }
 
 // LLM Call Record for debug purposes
@@ -51,6 +80,8 @@ export interface LlmCallRecord {
   outputTokens: number;
   latencyMs: number;
   createdAt: Date;
+  // For agent_exploration calls, track the tool calls made
+  toolCalls?: AgentToolCallRecord[];
 }
 
 // ============================================================================
@@ -61,14 +92,13 @@ export interface ComplexityFactors {
   commitCount: number;
   hasDiffs: boolean;
   hasFileContent: boolean;
-  queryType: 'summary' | 'regression' | 'symbol_lookup' | 'file_change' | 'general';
+  queryType: 'summary' | 'regression' | 'file_change' | 'general';
 }
 
 export function estimateComplexity(factors: ComplexityFactors): ModelTier {
   // Use strong model for:
   // - Regression analysis (requires deeper reasoning)
   // - Large commit counts with diffs
-  // - Symbol lookup (may need understanding code relationships)
   
   if (factors.queryType === 'regression') {
     return 'strong';
@@ -142,7 +172,8 @@ export class ModelRouter {
     response: string,
     inputTokens: number,
     outputTokens: number,
-    latencyMs: number
+    latencyMs: number,
+    toolCalls?: AgentToolCallRecord[]
   ): void {
     let history = this.llmCallHistoryByRun.get(runId);
     if (!history) {
@@ -159,7 +190,36 @@ export class ModelRouter {
       outputTokens,
       latencyMs,
       createdAt: new Date(),
+      toolCalls,
     });
+  }
+
+  /**
+   * Record an agent exploration call with tool calls (public method for orchestrator)
+   */
+  recordAgentExplorationCall(
+    runId: string,
+    model: string,
+    systemPrompt: string,
+    userPrompt: string,
+    response: string,
+    inputTokens: number,
+    outputTokens: number,
+    latencyMs: number,
+    toolCalls: AgentToolCallRecord[]
+  ): void {
+    this.recordLlmCall(
+      runId,
+      'agent_exploration',
+      model,
+      systemPrompt,
+      userPrompt,
+      response,
+      inputTokens,
+      outputTokens,
+      latencyMs,
+      toolCalls
+    );
   }
 
   /**
@@ -223,10 +283,12 @@ export class ModelRouter {
       max_tokens: request.maxTokens ?? modelConfig.maxTokens,
       temperature: request.temperature ?? modelConfig.temperature,
       ...(request.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
+      ...(request.tools ? { tools: request.tools } : {}),
     });
 
     const content = response.choices[0]?.message?.content ?? '';
     const finishReason = response.choices[0]?.finish_reason ?? 'unknown';
+    const toolCalls = response.choices[0]?.message?.tool_calls;
     
     const usage: ModelUsage = {
       model: modelConfig.model,
@@ -247,11 +309,12 @@ export class ModelRouter {
         outputTokens: usage.outputTokens,
         latencyMs: usage.latencyMs,
         finishReason,
+        hasToolCalls: !!toolCalls?.length,
       },
       'Completion response received'
     );
 
-    return { content, usage, finishReason };
+    return { content, usage, finishReason, toolCalls };
   }
 
   /**

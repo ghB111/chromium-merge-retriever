@@ -41,7 +41,6 @@ If you cannot find enough evidence to answer confidently:
 export const QUERY_CLASSIFICATION_PROMPT = `Classify the user's query into one of these categories:
 - "summary": User wants a broad overview of changes (e.g., "what changed", "summary of changes")
 - "regression": User is investigating a bug or failure (e.g., "why did X break", "what caused the failure")
-- "symbol_lookup": User wants to find or understand a specific symbol/class (e.g., "what is class X", "where is Y defined")
 - "file_change": User wants to know about changes to specific files/directories (e.g., "what changed in net/", "changes to foo.cc")
 - "general": Other questions about the codebase
 

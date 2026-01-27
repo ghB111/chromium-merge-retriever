@@ -1,15 +1,15 @@
 /**
  * Agent Orchestrator
- * Coordinates the agent loop for answering questions about Chromium changes
+ * Coordinates the agentic loop for answering questions about Chromium changes
+ * Uses OpenAI function calling to let the LLM explore commits via tools
  */
 
+import OpenAI from 'openai';
 import {
   AgentRunResult,
   Evidence,
   CommitEvidence,
   DiffEvidenceItem,
-  FileEvidenceItem,
-  QueryIntent,
   RankedCandidate,
   ToolCallRecord,
   createLogger,
@@ -27,18 +27,14 @@ import {
 import {
   createToolContext,
   listCommits,
-  readFileAtRevision,
-  batchGetCommitDetails,
-  batchGetDiffExcerpts,
-  rankCommits,
-  selectTopCandidates,
-  analyzeQuery,
+  getCommitDetails,
+  getDiffExcerpt,
+  searchCommits,
   type ToolContext,
 } from '@chromium-search/tools';
 
-import { ModelRouter, getModelRouter, estimateComplexity } from '../models/router.js';
+import { ModelRouter, getModelRouter, type AgentToolDefinition } from '../models/router.js';
 import {
-  QUERY_CLASSIFICATION_PROMPT,
   RANKING_PROMPT,
   ANSWER_SYNTHESIS_PROMPT,
 } from '../prompts/system.js';
@@ -58,9 +54,109 @@ interface RetrievedData {
   commits: CommitSummary[];
   details: Map<string, CommitDetails>;
   diffs: Map<string, DiffExcerpt>;
-  files: Map<string, string>;
   rankedCandidates: RankedCandidate[];
+  foundCommitShas: Set<string>; // SHAs the agent identified as relevant
 }
+
+// ============================================================================
+// Agent Tools Definition
+// ============================================================================
+
+const AGENT_TOOLS: AgentToolDefinition[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'search_commits',
+      description: 'Search through commit titles and messages for keywords. Use this to find commits related to specific topics, features, or bug fixes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          keywords: {
+            type: 'array',
+            description: 'Keywords to search for in commit titles and messages',
+            items: { type: 'string' },
+          },
+        },
+        required: ['keywords'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_commit_details',
+      description: 'Get detailed information about a specific commit including the full commit message and list of changed files.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sha: {
+            type: 'string',
+            description: 'The commit SHA (can be short or full)',
+          },
+        },
+        required: ['sha'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_diff',
+      description: 'Get the code diff/changes for a specific commit. Shows what lines were added and removed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sha: {
+            type: 'string',
+            description: 'The commit SHA (can be short or full)',
+          },
+        },
+        required: ['sha'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mark_relevant_commit',
+      description: 'Mark a commit as relevant to the user query. Call this for each commit you determine is related to what the user is asking about.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sha: {
+            type: 'string',
+            description: 'The commit SHA',
+          },
+          reason: {
+            type: 'string',
+            description: 'Brief explanation of why this commit is relevant',
+          },
+        },
+        required: ['sha', 'reason'],
+      },
+    },
+  },
+];
+
+const AGENT_SYSTEM_PROMPT = `You are an expert at analyzing changes in the Chromium codebase. Your job is to find commits relevant to the user's question.
+
+You have access to a list of commits in a specific range. Use the available tools to:
+1. Search for commits by keywords in their titles/messages
+2. Get detailed information about specific commits
+3. View the actual code changes (diffs) for commits
+4. Mark commits that are relevant to the user's question
+
+Strategy:
+- Start by searching for keywords related to the user's question
+- For promising commits, get their details to understand what they do
+- If needed, view the diff to see the actual code changes
+- Mark each commit you find relevant with mark_relevant_commit
+
+When you have found all relevant commits (or determined there are none), provide a brief summary of what you found.
+
+Available commits in range: {commit_count}
+Sample commit titles:
+{sample_commits}`;
 
 // ============================================================================
 // Orchestrator
@@ -130,6 +226,7 @@ export class AgentOrchestrator {
                 inputTokens: call.inputTokens,
                 outputTokens: call.outputTokens,
                 latencyMs: call.latencyMs,
+                toolCalls: call.toolCalls,
               })),
             }
           : { runId, toolCalls: [], rankedCandidates: [] },
@@ -148,44 +245,35 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Main agent execution loop
+   * Main agent execution loop with tool calling
    */
   private async executeAgentLoop(
     runId: string,
     scope: SessionScope,
     query: string,
-    context: ToolContext
+    toolContext: ToolContext
   ): Promise<{ answer: string; evidence: Evidence[]; rankedCandidates: RankedCandidate[] }> {
-    // Step 1: Analyze query
-    const queryAnalysis = analyzeQuery(query);
-    let intent: QueryIntent = 'general';
-
-    if (this.modelRouter.isAvailable()) {
-      try {
-        const classification = await this.modelRouter.classifyQuery(query, QUERY_CLASSIFICATION_PROMPT, runId);
-        intent = this.mapIntentString(classification.intent);
-      } catch (error) {
-        this.logger.warn({ error: String(error) }, 'Query classification failed, using heuristics');
-        intent = this.inferIntentFromAnalysis(queryAnalysis);
-      }
-    } else {
-      intent = this.inferIntentFromAnalysis(queryAnalysis);
+    // Check if LLM is available
+    if (!this.modelRouter.isAvailable()) {
+      return {
+        answer: 'LLM is not available. Please configure an OpenAI API key to use this service.',
+        evidence: [],
+        rankedCandidates: [],
+      };
     }
 
-    this.logger.debug({ intent, queryAnalysis }, 'Query analyzed');
-
-    // Step 2: Retrieve commits
+    // Step 1: Retrieve all commits in the range
     const retrieved: RetrievedData = {
       commits: [],
       details: new Map(),
       diffs: new Map(),
-      files: new Map(),
       rankedCandidates: [],
+      foundCommitShas: new Set(),
     };
 
     if (scope.rangeEnabled && scope.range) {
       const commitsResult = await listCommits(
-        context,
+        toolContext,
         scope.range.startSha,
         scope.range.endSha,
         { pathScope: scope.pathScope, maxCommits: this.config.defaults.maxCommits }
@@ -203,67 +291,83 @@ export class AgentOrchestrator {
       this.logger.debug({ count: retrieved.commits.length }, 'Retrieved commits');
     }
 
-    // Step 3: Rank candidates
-    if (retrieved.commits.length > 0) {
-      // Heuristic ranking
-      retrieved.rankedCandidates = rankCommits(retrieved.commits, {
+    if (retrieved.commits.length === 0) {
+      return {
+        answer: 'No commits found in the specified range.',
+        evidence: [],
+        rankedCandidates: [],
+      };
+    }
+
+    // Step 2: Run the agentic exploration loop
+    const relevantCommits: Map<string, string> = new Map(); // sha -> reason
+    
+    try {
+      await this.runAgentExplorationLoop(
+        runId,
         query,
-        pathScope: scope.pathScope,
+        retrieved,
+        toolContext,
+        relevantCommits
+      );
+    } catch (error) {
+      this.logger.error({ error: String(error) }, 'Agent exploration loop failed');
+      // Continue with any commits found so far
+    }
+
+    // Step 3: Rank the found commits using LLM
+    if (relevantCommits.size > 0) {
+      const foundCommits = Array.from(relevantCommits.entries()).map(([sha, reason]) => {
+        const commit = retrieved.commits.find(c => c.sha === sha || c.sha.startsWith(sha));
+        return {
+          sha: commit?.sha ?? sha,
+          title: commit?.title ?? 'Unknown',
+          messageSnippet: commit?.messageSnippet,
+          reason,
+        };
       });
 
-      // Optional LLM reranking of top candidates
-      if (this.modelRouter.isAvailable() && retrieved.rankedCandidates.length > 20) {
-        try {
-          const topForRerank = retrieved.rankedCandidates.slice(0, 50);
-          const reranked = await this.modelRouter.rankCommitsLLM(
-            query,
-            topForRerank.map((r) => {
-              const commit = retrieved.commits.find((c) => c.sha === r.sha);
-              return {
-                sha: r.sha,
-                title: commit?.title ?? '',
-                messageSnippet: commit?.messageSnippet,
-              };
-            }),
-            RANKING_PROMPT,
-            runId
-          );
+      try {
+        const ranked = await this.modelRouter.rankCommitsLLM(
+          query,
+          foundCommits,
+          RANKING_PROMPT,
+          runId
+        );
 
-          if (reranked.rankings.length > 0) {
-            // Merge LLM rankings with heuristic rankings
-            const llmRankMap = new Map(reranked.rankings.map((r) => [r.sha.slice(0, 8), r]));
-            retrieved.rankedCandidates = retrieved.rankedCandidates.map((r) => {
-              const llmRank = llmRankMap.get(r.sha.slice(0, 8));
-              if (llmRank) {
-                return {
-                  sha: r.sha,
-                  score: (r.score + llmRank.score) / 2,
-                  reason: `${r.reason}; LLM: ${llmRank.reason}`,
-                };
-              }
-              return r;
-            });
-            retrieved.rankedCandidates.sort((a, b) => b.score - a.score);
-          }
-        } catch (error) {
-          this.logger.warn({ error: String(error) }, 'LLM reranking failed');
+        if (ranked.rankings.length > 0) {
+          retrieved.rankedCandidates = ranked.rankings.map((r) => ({
+            sha: this.expandSha(r.sha, retrieved.commits),
+            score: r.score,
+            reason: r.reason,
+          }));
+        } else {
+          // Use the found commits in order
+          retrieved.rankedCandidates = foundCommits.map((c, idx) => ({
+            sha: this.expandSha(c.sha, retrieved.commits),
+            score: 1 - (idx / foundCommits.length),
+            reason: c.reason,
+          }));
         }
+      } catch (error) {
+        this.logger.error({ error: String(error) }, 'LLM ranking failed');
+        // Use found commits without ranking
+        retrieved.rankedCandidates = Array.from(relevantCommits.entries()).map(([sha, reason], idx) => ({
+          sha: this.expandSha(sha, retrieved.commits),
+          score: 1 - (idx / relevantCommits.size),
+          reason,
+        }));
       }
     }
 
-    // Step 4: Deep dive based on intent
-    const topK = selectTopCandidates(
-      retrieved.rankedCandidates,
-      this.getDeepDiveCount(intent),
-      0.1
-    );
-
+    // Step 4: Fetch details and diffs for top ranked commits
+    const topK = retrieved.rankedCandidates.slice(0, 10);
     if (topK.length > 0) {
-      await this.deepDive(context, topK, retrieved, intent, queryAnalysis);
+      await this.fetchDetailsAndDiffs(toolContext, topK, retrieved);
     }
 
-    // Step 5: Synthesize answer
-    const answer = await this.synthesizeAnswer(query, intent, retrieved, context, runId);
+    // Step 5: Synthesize final answer
+    const answer = await this.synthesizeAnswer(query, retrieved, runId);
 
     // Step 6: Build evidence
     const evidence = this.buildEvidence(retrieved, topK);
@@ -276,48 +380,247 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Deep dive into top candidates
+   * Run the agentic exploration loop where LLM calls tools to find relevant commits
    */
-  private async deepDive(
+  private async runAgentExplorationLoop(
+    runId: string,
+    query: string,
+    retrieved: RetrievedData,
+    toolContext: ToolContext,
+    relevantCommits: Map<string, string>
+  ): Promise<void> {
+    const maxIterations = 10;
+    let iteration = 0;
+
+    // Build system prompt with commit info
+    const sampleCommits = retrieved.commits
+      .slice(0, 20)
+      .map(c => `- ${c.sha.slice(0, 8)}: ${c.title}`)
+      .join('\n');
+
+    const systemPrompt = AGENT_SYSTEM_PROMPT
+      .replace('{commit_count}', String(retrieved.commits.length))
+      .replace('{sample_commits}', sampleCommits);
+
+    const userPrompt = `User question: ${query}\n\nPlease search for and identify commits relevant to this question.`;
+
+    // Initialize conversation
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ];
+
+    while (iteration < maxIterations) {
+      iteration++;
+      this.logger.debug({ iteration }, 'Agent exploration iteration');
+
+      // Call LLM with tools
+      const result = await this.modelRouter.complete({
+        messages,
+        tier: 'fast',
+        maxTokens: 2048,
+        temperature: 0.3,
+        tools: AGENT_TOOLS as OpenAI.ChatCompletionTool[],
+        runId,
+      });
+
+      // Check if LLM wants to call tools
+      if (!result.toolCalls || result.toolCalls.length === 0) {
+        // LLM is done exploring - record final response
+        this.modelRouter.recordAgentExplorationCall(
+          runId,
+          this.config.openai.fastModel,
+          systemPrompt,
+          `[Iteration ${iteration}] Agent finished exploring`,
+          result.content || '(no content)',
+          result.usage.inputTokens,
+          result.usage.outputTokens,
+          result.usage.latencyMs,
+          []
+        );
+        this.logger.debug({ content: result.content?.slice(0, 100) }, 'Agent finished exploring');
+        break;
+      }
+
+      // Process tool calls and collect results for debugging
+      const toolCallRecords: Array<{ name: string; arguments: string; result: string }> = [];
+      const toolResults: OpenAI.ChatCompletionMessageParam[] = [];
+      
+      // Add assistant message with tool calls
+      messages.push({
+        role: 'assistant',
+        content: result.content || null,
+        tool_calls: result.toolCalls,
+      });
+
+      for (const toolCall of result.toolCalls) {
+        const toolResult = await this.executeToolCall(
+          toolCall,
+          retrieved,
+          toolContext,
+          relevantCommits
+        );
+
+        // Record for debugging
+        toolCallRecords.push({
+          name: toolCall.function.name,
+          arguments: toolCall.function.arguments,
+          result: toolResult,
+        });
+
+        toolResults.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: toolResult,
+        });
+      }
+
+      // Record this iteration's exploration with tool calls
+      this.modelRouter.recordAgentExplorationCall(
+        runId,
+        this.config.openai.fastModel,
+        systemPrompt,
+        `[Iteration ${iteration}] Tool calls: ${result.toolCalls.map(tc => tc.function.name).join(', ')}`,
+        result.content || '(tool calls only)',
+        result.usage.inputTokens,
+        result.usage.outputTokens,
+        result.usage.latencyMs,
+        toolCallRecords
+      );
+
+      // Add tool results to conversation
+      messages.push(...toolResults);
+    }
+  }
+
+  /**
+   * Execute a single tool call
+   */
+  private async executeToolCall(
+    toolCall: OpenAI.ChatCompletionMessageToolCall,
+    retrieved: RetrievedData,
+    toolContext: ToolContext,
+    relevantCommits: Map<string, string>
+  ): Promise<string> {
+    const { name, arguments: argsJson } = toolCall.function;
+    
+    try {
+      const args = JSON.parse(argsJson);
+
+      switch (name) {
+        case 'search_commits': {
+          const keywords = args.keywords as string[];
+          const result = searchCommits(retrieved.commits, keywords, { maxResults: 15 });
+          if (result.matches && result.matches.length > 0) {
+            return JSON.stringify({
+              found: result.count,
+              commits: result.matches.map(m => ({
+                sha: m.sha.slice(0, 8),
+                title: m.title,
+                matchedIn: m.matchedIn,
+              })),
+            });
+          }
+          return JSON.stringify({ found: 0, message: 'No commits found matching those keywords' });
+        }
+
+        case 'get_commit_details': {
+          const sha = this.expandSha(args.sha, retrieved.commits);
+          
+          // Check if we already have the details
+          let details = retrieved.details.get(sha);
+          if (!details) {
+            const result = await getCommitDetails(toolContext, sha);
+            if (result.success && result.details) {
+              details = result.details;
+              retrieved.details.set(sha, details);
+            } else {
+              return JSON.stringify({ error: result.error || 'Failed to get commit details' });
+            }
+          }
+
+          return JSON.stringify({
+            sha: details.sha.slice(0, 8),
+            title: details.title,
+            message: details.message.slice(0, 500) + (details.message.length > 500 ? '...' : ''),
+            filesChanged: details.filesChanged?.slice(0, 10),
+            totalFilesChanged: details.filesChanged?.length ?? 0,
+          });
+        }
+
+        case 'get_diff': {
+          const sha = this.expandSha(args.sha, retrieved.commits);
+          
+          // Check if we already have the diff
+          let diff = retrieved.diffs.get(sha);
+          if (!diff) {
+            const result = await getDiffExcerpt(toolContext, sha);
+            if (result.success && result.diff) {
+              diff = result.diff;
+              retrieved.diffs.set(sha, diff);
+            } else {
+              return JSON.stringify({ error: result.error || 'Failed to get diff' });
+            }
+          }
+
+          return JSON.stringify({
+            sha: diff.sha.slice(0, 8),
+            files: diff.diffs.slice(0, 3).map(d => ({
+              file: d.file,
+              excerpt: d.excerpt.slice(0, 500) + (d.excerpt.length > 500 ? '...' : ''),
+            })),
+          });
+        }
+
+        case 'mark_relevant_commit': {
+          const sha = this.expandSha(args.sha, retrieved.commits);
+          const reason = args.reason as string;
+          relevantCommits.set(sha, reason);
+          return JSON.stringify({ success: true, message: `Marked commit ${sha.slice(0, 8)} as relevant` });
+        }
+
+        default:
+          return JSON.stringify({ error: `Unknown tool: ${name}` });
+      }
+    } catch (error) {
+      return JSON.stringify({ error: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+
+  /**
+   * Fetch details and diffs for top ranked commits
+   */
+  private async fetchDetailsAndDiffs(
     context: ToolContext,
     candidates: RankedCandidate[],
-    retrieved: RetrievedData,
-    intent: QueryIntent,
-    queryAnalysis: ReturnType<typeof analyzeQuery>
+    retrieved: RetrievedData
   ): Promise<void> {
-    const shas = candidates.map((c) => c.sha);
-
-    // Get commit details
-    const detailsResult = await batchGetCommitDetails(context, shas);
-    if (detailsResult.details) {
-      for (const detail of detailsResult.details) {
-        retrieved.details.set(detail.sha, detail);
+    for (const candidate of candidates) {
+      // Get details if not already fetched
+      if (!retrieved.details.has(candidate.sha)) {
+        const result = await getCommitDetails(context, candidate.sha);
+        if (result.success && result.details) {
+          retrieved.details.set(candidate.sha, result.details);
+        }
       }
-    }
 
-    // For regression/file queries, get diffs
-    if (intent === 'regression' || intent === 'file_change') {
-      const diffsResult = await batchGetDiffExcerpts(
-        context,
-        shas.slice(0, 5), // Limit diff fetches
-        { fileGlobs: queryAnalysis.potentialPaths.length > 0 ? queryAnalysis.potentialPaths : undefined }
-      );
-      if (diffsResult.diffs) {
-        for (const diff of diffsResult.diffs) {
-          retrieved.diffs.set(diff.sha, diff);
+      // Get diff if not already fetched
+      if (!retrieved.diffs.has(candidate.sha)) {
+        const result = await getDiffExcerpt(context, candidate.sha);
+        if (result.success && result.diff) {
+          retrieved.diffs.set(candidate.sha, result.diff);
         }
       }
     }
+  }
 
-    // For symbol lookup, try to read relevant files
-    if (intent === 'symbol_lookup' && queryAnalysis.potentialPaths.length > 0) {
-      for (const path of queryAnalysis.potentialPaths.slice(0, 2)) {
-        const fileResult = await readFileAtRevision(context, path, 'HEAD');
-        if (fileResult.success && fileResult.file) {
-          retrieved.files.set(path, fileResult.file.excerpt);
-        }
-      }
-    }
+  /**
+   * Expand a short SHA to full SHA by matching against commits
+   */
+  private expandSha(shortSha: string, commits: CommitSummary[]): string {
+    const normalized = shortSha.toLowerCase();
+    const match = commits.find((c) => c.sha.toLowerCase().startsWith(normalized));
+    return match?.sha ?? shortSha;
   }
 
   /**
@@ -325,9 +628,7 @@ export class AgentOrchestrator {
    */
   private async synthesizeAnswer(
     query: string,
-    intent: QueryIntent,
     retrieved: RetrievedData,
-    _context: ToolContext,
     runId: string
   ): Promise<string> {
     // Build context for answer generation
@@ -339,14 +640,16 @@ export class AgentOrchestrator {
       
       if (retrieved.rankedCandidates.length > 0) {
         const topCommits = retrieved.rankedCandidates.slice(0, 10);
-        contextParts.push('\n### Top Relevant Commits:');
+        contextParts.push('\n### Relevant Commits Found:');
         for (const candidate of topCommits) {
           const commit = retrieved.commits.find((c) => c.sha === candidate.sha);
           if (commit) {
             contextParts.push(`- **${commit.sha.slice(0, 8)}**: ${commit.title}`);
-            contextParts.push(`  Score: ${candidate.score.toFixed(2)} - ${candidate.reason}`);
+            contextParts.push(`  Relevance: ${candidate.reason}`);
           }
         }
+      } else {
+        contextParts.push('\nNo commits were identified as relevant to the query.');
       }
     }
 
@@ -354,6 +657,9 @@ export class AgentOrchestrator {
     if (retrieved.details.size > 0) {
       contextParts.push('\n### Commit Details:');
       for (const [sha, detail] of retrieved.details) {
+        // Only include details for ranked candidates
+        if (!retrieved.rankedCandidates.some(c => c.sha === sha)) continue;
+        
         contextParts.push(`\n#### ${sha.slice(0, 8)}: ${detail.title}`);
         contextParts.push(`Message:\n${detail.message.slice(0, 500)}${detail.message.length > 500 ? '...' : ''}`);
         if (detail.filesChanged && detail.filesChanged.length > 0) {
@@ -366,6 +672,9 @@ export class AgentOrchestrator {
     if (retrieved.diffs.size > 0) {
       contextParts.push('\n### Diff Excerpts:');
       for (const [sha, diff] of retrieved.diffs) {
+        // Only include diffs for ranked candidates
+        if (!retrieved.rankedCandidates.some(c => c.sha === sha)) continue;
+        
         for (const fileDiff of diff.diffs.slice(0, 3)) {
           contextParts.push(`\n#### ${sha.slice(0, 8)} - ${fileDiff.file}`);
           contextParts.push('```diff\n' + fileDiff.excerpt.slice(0, 1000) + '\n```');
@@ -376,32 +685,16 @@ export class AgentOrchestrator {
       }
     }
 
-    // Add file content
-    if (retrieved.files.size > 0) {
-      contextParts.push('\n### File Content:');
-      for (const [path, content] of retrieved.files) {
-        contextParts.push(`\n#### ${path}`);
-        contextParts.push('```\n' + content.slice(0, 2000) + '\n```');
-      }
-    }
-
     const evidenceContext = contextParts.join('\n');
 
-    // Use LLM if available
+    // Use LLM to generate answer
     if (this.modelRouter.isAvailable()) {
-      const complexity = estimateComplexity({
-        commitCount: retrieved.commits.length,
-        hasDiffs: retrieved.diffs.size > 0,
-        hasFileContent: retrieved.files.size > 0,
-        queryType: intent,
-      });
-
       try {
         const result = await this.modelRouter.generateAnswer(
           query,
           evidenceContext,
           ANSWER_SYNTHESIS_PROMPT,
-          complexity,
+          'strong',
           runId
         );
         return result.content;
@@ -410,18 +703,14 @@ export class AgentOrchestrator {
       }
     }
 
-    // Fallback: Generate a simple answer without LLM
-    return this.generateFallbackAnswer(query, intent, retrieved);
+    // Fallback
+    return this.generateFallbackAnswer(retrieved);
   }
 
   /**
    * Generate a fallback answer without LLM
    */
-  private generateFallbackAnswer(
-    _query: string,
-    intent: QueryIntent,
-    retrieved: RetrievedData
-  ): string {
+  private generateFallbackAnswer(retrieved: RetrievedData): string {
     const parts: string[] = [];
 
     if (retrieved.commits.length === 0) {
@@ -431,23 +720,17 @@ export class AgentOrchestrator {
     parts.push(`Found ${retrieved.commits.length} commits in the range.\n`);
 
     if (retrieved.rankedCandidates.length > 0) {
-      parts.push('## Most Relevant Commits\n');
+      parts.push('## Relevant Commits\n');
       const top = retrieved.rankedCandidates.slice(0, 5);
       for (const candidate of top) {
         const commit = retrieved.commits.find((c) => c.sha === candidate.sha);
         if (commit) {
           parts.push(`- **${commit.sha.slice(0, 8)}**: ${commit.title}`);
-          const detail = retrieved.details.get(commit.sha);
-          if (detail?.filesChanged && detail.filesChanged.length > 0) {
-            parts.push(`  Files: ${detail.filesChanged.slice(0, 5).join(', ')}`);
-          }
+          parts.push(`  Relevance: ${candidate.reason}`);
         }
       }
-    }
-
-    if (intent === 'summary') {
-      parts.push('\n## Summary');
-      parts.push('To get a more detailed analysis, please ensure OpenAI API key is configured.');
+    } else {
+      parts.push('No commits were identified as relevant to the query.');
     }
 
     return parts.join('\n');
@@ -459,8 +742,8 @@ export class AgentOrchestrator {
   private buildEvidence(retrieved: RetrievedData, topCandidates: RankedCandidate[]): Evidence[] {
     const evidence: Evidence[] = [];
 
-    // Add commit evidence
-    for (const candidate of topCandidates.slice(0, 10)) {
+    // Add commit evidence for all ranked candidates
+    for (const candidate of topCandidates) {
       const commit = retrieved.commits.find((c) => c.sha === candidate.sha);
       if (commit) {
         evidence.push({
@@ -472,28 +755,20 @@ export class AgentOrchestrator {
       }
     }
 
-    // Add diff evidence
-    for (const [sha, diff] of retrieved.diffs) {
-      for (const fileDiff of diff.diffs.slice(0, 3)) {
-        evidence.push({
-          type: 'diff_excerpt',
-          sha,
-          file: fileDiff.file,
-          excerpt: fileDiff.excerpt.slice(0, 500),
-          truncated: fileDiff.truncated || fileDiff.excerpt.length > 500,
-        } as DiffEvidenceItem);
+    // Add diff evidence for ranked candidates
+    for (const candidate of topCandidates.slice(0, 5)) {
+      const diff = retrieved.diffs.get(candidate.sha);
+      if (diff) {
+        for (const fileDiff of diff.diffs.slice(0, 2)) {
+          evidence.push({
+            type: 'diff_excerpt',
+            sha: candidate.sha,
+            file: fileDiff.file,
+            excerpt: fileDiff.excerpt.slice(0, 500),
+            truncated: fileDiff.truncated || fileDiff.excerpt.length > 500,
+          } as DiffEvidenceItem);
+        }
       }
-    }
-
-    // Add file evidence
-    for (const [path, content] of retrieved.files) {
-      evidence.push({
-        type: 'file_excerpt',
-        revision: 'HEAD',
-        path,
-        excerpt: content.slice(0, 500),
-        truncated: content.length > 500,
-      } as FileEvidenceItem);
     }
 
     return evidence;
@@ -516,49 +791,6 @@ export class AgentOrchestrator {
         rankedCandidates: [],
       },
     };
-  }
-
-  /**
-   * Map intent string to QueryIntent type
-   */
-  private mapIntentString(intent: string): QueryIntent {
-    const mapping: Record<string, QueryIntent> = {
-      summary: 'summary',
-      regression: 'regression',
-      symbol_lookup: 'symbol_lookup',
-      file_change: 'file_change',
-      general: 'general',
-    };
-    return mapping[intent] ?? 'general';
-  }
-
-  /**
-   * Infer intent from query analysis
-   */
-  private inferIntentFromAnalysis(analysis: ReturnType<typeof analyzeQuery>): QueryIntent {
-    if (analysis.isRegressionQuery) return 'regression';
-    if (analysis.isSummaryQuery) return 'summary';
-    if (analysis.isFileQuery) return 'file_change';
-    if (analysis.potentialSymbols.length > 0) return 'symbol_lookup';
-    return 'general';
-  }
-
-  /**
-   * Get number of commits to deep dive based on intent
-   */
-  private getDeepDiveCount(intent: QueryIntent): number {
-    switch (intent) {
-      case 'summary':
-        return 5; // Fewer deep dives for summaries
-      case 'regression':
-        return 15; // More for regression analysis
-      case 'symbol_lookup':
-        return 10;
-      case 'file_change':
-        return 10;
-      default:
-        return 10;
-    }
   }
 }
 
