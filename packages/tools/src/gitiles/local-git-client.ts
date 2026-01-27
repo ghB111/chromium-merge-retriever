@@ -3,7 +3,7 @@
  * Accesses git repository data from a local checkout using git commands
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 
@@ -24,7 +24,7 @@ import {
 import { InMemoryCache, type Cache } from './cache.js';
 import type { IRepositoryClient, ListCommitsOptions, GetDiffOptions, ReadFileOptions } from './repository.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ============================================================================
 // Local Git Client
@@ -66,11 +66,10 @@ export class LocalGitClient implements IRepositoryClient {
    * Execute a git command in the repository directory
    */
   private async execGit(repoPath: string, args: string[], maxBuffer?: number): Promise<string> {
-    const fullCommand = `git ${args.join(' ')}`;
-    this.logger.trace({ repoPath, command: fullCommand }, 'Executing git command');
+    this.logger.trace({ repoPath, args }, 'Executing git command');
 
     try {
-      const { stdout, stderr } = await execAsync(fullCommand, {
+      const { stdout, stderr } = await execFileAsync('git', args, {
         cwd: repoPath,
         maxBuffer: maxBuffer ?? 50 * 1024 * 1024, // 50MB default buffer
       });
@@ -82,7 +81,7 @@ export class LocalGitClient implements IRepositoryClient {
       return stdout;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error({ repoPath, command: fullCommand, error: message }, 'Git command failed');
+      this.logger.error({ repoPath, args, error: message }, 'Git command failed');
       throw new ServiceError(`Git command failed: ${message}`, 'GIT_ERROR', 500);
     }
   }
