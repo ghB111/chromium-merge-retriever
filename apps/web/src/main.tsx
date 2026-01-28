@@ -11,6 +11,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
+        <Route path="/chat/:sessionId" element={<App />} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/admin/debug" element={<AdminDebugPage />} />
         <Route path="/admin/debug/:sessionId" element={<AdminDebugPage />} />
