@@ -16,6 +16,8 @@ import {
   Cpu,
   FileText,
   Zap,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { api, ApiError } from '../services/api';
 import type { AdminSessionSummary, AdminSessionDetail, AdminMessage, AdminRunDetail, LlmCall } from '../types';
@@ -304,6 +306,29 @@ function SessionDetailView({ sessionId, onBack }: SessionDetailViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const [expandedLlmCalls, setExpandedLlmCalls] = useState<Set<string>>(new Set());
+  const [copiedSessionId, setCopiedSessionId] = useState(false);
+
+  const handleCopySessionId = async (fullId: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(fullId);
+      } else {
+        // Fallback for non-secure contexts
+        const textArea = document.createElement('textarea');
+        textArea.value = fullId;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiedSessionId(true);
+      setTimeout(() => setCopiedSessionId(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy session ID:', err);
+    }
+  };
 
   const loadDetail = async () => {
     setIsLoading(true);
@@ -401,9 +426,20 @@ function SessionDetailView({ sessionId, onBack }: SessionDetailViewProps) {
       <div className="card p-4">
         <h2 className="text-lg font-semibold text-gray-900 mb-2">Session Info</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
+          <div className="flex items-center">
             <span className="text-gray-500">ID:</span>
             <span className="ml-2 font-mono">{detail.session.id.slice(0, 12)}...</span>
+            <button
+              onClick={() => handleCopySessionId(detail.session.id)}
+              className="ml-2 p-1 hover:bg-gray-100 rounded transition-colors"
+              title={copiedSessionId ? 'Copied!' : 'Copy full session ID'}
+            >
+              {copiedSessionId ? (
+                <Check className="w-3.5 h-3.5 text-green-500" />
+              ) : (
+                <Copy className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600" />
+              )}
+            </button>
           </div>
           <div>
             <span className="text-gray-500">Created:</span>
