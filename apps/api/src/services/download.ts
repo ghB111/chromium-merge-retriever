@@ -15,7 +15,7 @@ import {
   type CommitDetails,
 } from '@chromium-search/shared';
 
-import { getGitilesClient, CacheManager, UNLIMITED_COMMITS, type GitilesClient, type Cache } from '@chromium-search/tools';
+import { getRepositoryClient, CacheManager, UNLIMITED_COMMITS, type IRepositoryClient, type Cache } from '@chromium-search/tools';
 
 // ============================================================================
 // Rate Limit Retry Configuration
@@ -52,7 +52,7 @@ export class DownloadService {
   private prisma: PrismaClient;
   private logger: Logger;
   private config = getConfig();
-  private gitilesClient: GitilesClient;
+  private repositoryClient: IRepositoryClient;
   private cache: Cache;
   private activeDownloads: Map<string, AbortController> = new Map();
   private progressCallbacks: Map<string, Set<ProgressCallback>> = new Map();
@@ -60,7 +60,7 @@ export class DownloadService {
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
     this.logger = createLogger('DownloadService');
-    this.gitilesClient = getGitilesClient();
+    this.repositoryClient = getRepositoryClient();
     this.cache = CacheManager.getInstance().getCache();
   }
 
@@ -126,7 +126,7 @@ export class DownloadService {
       // First, get the list of commits in the range
       this.logger.info({ rangeId, startSha, endSha }, 'Fetching commit list');
       
-      const commits = await this.gitilesClient.listCommits({
+      const commits = await this.repositoryClient.listCommits({
         repoBaseUrl,
         startSha,
         endSha,
@@ -189,7 +189,7 @@ export class DownloadService {
       }
 
       // Cache the full commit list for this range (bypasses normal limits)
-      await this.gitilesClient.cacheFullCommitList(startSha, endSha, commits);
+      await this.repositoryClient.cacheFullCommitList(startSha, endSha, commits);
       this.logger.info({ rangeId, totalCommits }, 'Cached full commit list');
 
       // Mark as completed
@@ -354,7 +354,7 @@ export class DownloadService {
         // Download with rate-limit-aware retry
         await this.withRateLimitRetry(
           async () => {
-            const details = await this.gitilesClient.getCommitDetails(repoBaseUrl, sha);
+            const details = await this.repositoryClient.getCommitDetails(repoBaseUrl, sha);
             
             // Cache the commit details with long TTL (30 days)
             await this.cache.set(cacheKey, details, this.config.cache.ttlCommitDetails);

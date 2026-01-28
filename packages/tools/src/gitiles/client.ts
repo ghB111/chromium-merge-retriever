@@ -31,48 +31,16 @@ import {
 } from './url-parser.js';
 
 import { InMemoryCache, type Cache } from './cache.js';
+import type { IRepositoryClient, ListCommitsOptions, GetDiffOptions, ReadFileOptions } from './repository.js';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Use this constant with maxCommits to fetch all commits without any limit.
- * @example
- * client.listCommits({ ..., maxCommits: UNLIMITED_COMMITS })
- */
-export const UNLIMITED_COMMITS = Infinity;
-
-export interface ListCommitsOptions {
-  repoBaseUrl: string;
-  startSha: string;
-  endSha: string;
-  pathScope?: string[];
-  /**
-   * Maximum number of commits to return.
-   * - If undefined, uses the default from config
-   * - Use `UNLIMITED_COMMITS` (Infinity) to fetch all commits without limit
-   */
-  maxCommits?: number;
-  /** If true, check for full/pre-cached commit list first (no limit) */
-  preferFullCache?: boolean;
-}
-
-export interface GetDiffOptions {
-  fileGlobs?: string[];
-  contextLines?: number;
-  maxLines?: number;
-}
-
-export interface ReadFileOptions {
-  maxBytes?: number;
-}
+// Re-export types from repository.ts for backwards compatibility
+export { UNLIMITED_COMMITS, type ListCommitsOptions, type GetDiffOptions, type ReadFileOptions } from './repository.js';
 
 // ============================================================================
 // Gitiles Client
 // ============================================================================
 
-export class GitilesClient {
+export class GitilesClient implements IRepositoryClient {
   private logger: Logger;
   private cache: Cache;
   private config = getConfig();

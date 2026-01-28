@@ -28,6 +28,14 @@ const envSchema = z.object({
   OPENAI_FAST_MODEL: z.string().default('gpt-4o-mini'),
   OPENAI_STRONG_MODEL: z.string().default('gpt-4o'),
 
+  // Repository Source Configuration
+  // Options: 'gitiles' (default) or 'local' (uses local git checkout)
+  REPO_SOURCE: z.enum(['gitiles', 'local']).default('gitiles'),
+  // Path to local git checkouts directory (used when REPO_SOURCE=local)
+  LOCAL_CHECKOUT_PATH: z.string().default('./data/checkouts'),
+  // Batch size for fetching commit details/diffs (used when REPO_SOURCE=local)
+  LOCAL_GIT_BATCH_SIZE: z.string().default('100').transform(Number),
+
   // Gitiles
   GITILES_BASE_URL: z.string().default('https://chromium.googlesource.com'),
   GITILES_REPO_PATH: z.string().default('/chromium/src'),
@@ -124,6 +132,16 @@ class Config {
       baseUrl: this.env.OPENAI_BASE_URL,
       fastModel: this.env.OPENAI_FAST_MODEL,
       strongModel: this.env.OPENAI_STRONG_MODEL,
+    };
+  }
+
+  get repositorySource() {
+    return {
+      type: this.env.REPO_SOURCE,
+      isLocal: this.env.REPO_SOURCE === 'local',
+      isGitiles: this.env.REPO_SOURCE === 'gitiles',
+      localCheckoutPath: this.env.LOCAL_CHECKOUT_PATH,
+      localGitBatchSize: this.env.LOCAL_GIT_BATCH_SIZE,
     };
   }
 

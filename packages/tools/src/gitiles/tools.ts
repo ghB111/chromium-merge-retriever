@@ -1,6 +1,7 @@
 /**
- * Agent Tools for Gitiles Operations
- * These tools wrap the GitilesClient for use by the agent orchestrator
+ * Agent Tools for Repository Operations
+ * These tools wrap the repository client for use by the agent orchestrator
+ * Supports both Gitiles and local git checkout backends
  */
 
 import {
@@ -18,7 +19,8 @@ import {
   type BudgetUsage,
 } from '@chromium-search/shared';
 
-import { getGitilesClient, type GetDiffOptions } from './client.js';
+import { getRepositoryClient } from './client-factory.js';
+import type { GetDiffOptions } from './repository.js';
 import { parseRangeFromGitilesUrl } from './url-parser.js';
 
 // ============================================================================
@@ -132,7 +134,7 @@ export async function listCommits(
   checkBudget(context, toolName);
   
   const timer = createTimer();
-  const client = getGitilesClient();
+  const client = getRepositoryClient();
   
   try {
     // Validate refs (can be SHAs or version tags)
@@ -184,7 +186,7 @@ export async function getCommitDetails(
   checkBudget(context, toolName);
   
   const timer = createTimer();
-  const client = getGitilesClient();
+  const client = getRepositoryClient();
   
   try {
     if (!isValidGitRef(sha)) {
@@ -229,7 +231,7 @@ export async function getDiffExcerpt(
   checkBudget(context, toolName);
   
   const timer = createTimer();
-  const client = getGitilesClient();
+  const client = getRepositoryClient();
   
   try {
     if (!isValidGitRef(sha)) {
@@ -279,7 +281,7 @@ export async function readFileAtRevision(
   checkBudget(context, toolName);
   
   const timer = createTimer();
-  const client = getGitilesClient();
+  const client = getRepositoryClient();
   
   try {
     // Allow HEAD, valid SHA, or version tag
