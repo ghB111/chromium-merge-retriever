@@ -193,11 +193,12 @@ export class SessionService {
   /**
    * Get messages for a session
    */
-  async getMessages(sessionId: string): Promise<Array<{ role: string; content: string; createdAt: Date }>> {
+  async getMessages(sessionId: string): Promise<Array<{ id: string; role: string; content: string; createdAt: Date }>> {
     const messages = await this.prisma.message.findMany({
       where: { sessionId },
       orderBy: { createdAt: 'asc' },
       select: {
+        id: true,
         role: true,
         content: true,
         createdAt: true,

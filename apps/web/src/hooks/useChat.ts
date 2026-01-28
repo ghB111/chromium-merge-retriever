@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import type { Session, SessionScope, Message } from '../types';
 
@@ -15,39 +16,105 @@ interface UseChatReturn {
   setShowDebug: (show: boolean) => void;
 }
 
-export function useChat(): UseChatReturn {
+export function useChat(urlSessionId?: string): UseChatReturn {
+  const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(true);
 
-  // Auto-create session on mount
-  useEffect(() => {
-    const storedSessionId = localStorage.getItem('chromium-search-session');
-    if (storedSessionId) {
-      api.getSession(storedSessionId)
-        .then(setSession)
-        .catch(() => {
-          localStorage.removeItem('chromium-search-session');
-          createSession();
-        });
-    } else {
-      createSession();
+  // Helper function to load session and messages
+  const loadSession = useCallback(async (sessionId: string, updateUrl: boolean = false) => {
+    try {
+      const [sessionData, { messages: apiMessages }] = await Promise.all([
+        api.getSession(sessionId),
+        api.getMessages(sessionId),
+      ]);
+      
+      setSession(sessionData);
+      localStorage.setItem('chromium-search-session', sessionId);
+      
+      // Update URL if needed (e.g., when loading from localStorage)
+      if (updateUrl) {
+        navigate(`/chat/${sessionId}`, { replace: true });
+      }
+      
+      // Convert API messages to frontend Message format
+      const loadedMessages: Message[] = apiMessages.map((msg) => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: new Date(msg.createdAt),
+      }));
+      
+      // Check if the session is in progress (last message is from user, meaning assistant response is pending)
+      const lastMessage = loadedMessages[loadedMessages.length - 1];
+      if (lastMessage && lastMessage.role === 'user') {
+        // Add a loading placeholder for the pending assistant response
+        const assistantPlaceholder: Message = {
+          id: `assistant-pending-${Date.now()}`,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          isLoading: true,
+        };
+        setMessages([...loadedMessages, assistantPlaceholder]);
+        setIsLoading(true);
+      } else {
+        setMessages(loadedMessages);
+      }
+      
+      return true;
+    } catch {
+      return false;
     }
-  }, []);
+  }, [navigate]);
 
-  const createSession = useCallback(async () => {
+  // Auto-create session on mount or load existing session with messages
+  useEffect(() => {
+    const initSession = async () => {
+      // Priority 1: URL session ID
+      if (urlSessionId) {
+        const loaded = await loadSession(urlSessionId, false);
+        if (loaded) return;
+        // If URL session ID is invalid, clear it and create new session
+        navigate('/', { replace: true });
+      }
+      
+      // Priority 2: localStorage session ID (only if no URL session)
+      if (!urlSessionId) {
+        const storedSessionId = localStorage.getItem('chromium-search-session');
+        if (storedSessionId) {
+          const loaded = await loadSession(storedSessionId, true);
+          if (loaded) return;
+          // If stored session is invalid, clear it
+          localStorage.removeItem('chromium-search-session');
+        }
+      }
+      
+      // Priority 3: Create new session
+      await createNewSession();
+    };
+    
+    initSession();
+  }, [urlSessionId]); // Only re-run when URL session ID changes
+
+  const createNewSession = useCallback(async () => {
     setError(null);
     try {
       const newSession = await api.createSession();
       setSession(newSession);
       setMessages([]);
       localStorage.setItem('chromium-search-session', newSession.sessionId);
+      navigate(`/chat/${newSession.sessionId}`, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create session');
     }
-  }, []);
+  }, [navigate]);
+
+  // Keep createSession as alias for external use
+  const createSession = createNewSession;
 
   const updateScope = useCallback(async (
     scopeUpdate: Partial<SessionScope> & { rangeUrl?: string }
@@ -127,8 +194,9 @@ export function useChat(): UseChatReturn {
     // This blocks sendMessage() since it checks `if (!session || isLoading) return;`
     setSession(null);
     setMessages([]);
-    await createSession();
-  }, [createSession]);
+    setIsLoading(false);
+    await createNewSession();
+  }, [createNewSession]);
 
   return {
     session,
