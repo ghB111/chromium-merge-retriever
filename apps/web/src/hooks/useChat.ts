@@ -22,12 +22,42 @@ export function useChat(): UseChatReturn {
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(true);
 
-  // Auto-create session on mount
+  // Auto-create session on mount or load existing session with messages
   useEffect(() => {
     const storedSessionId = localStorage.getItem('chromium-search-session');
     if (storedSessionId) {
-      api.getSession(storedSessionId)
-        .then(setSession)
+      // Load existing session and its messages
+      Promise.all([
+        api.getSession(storedSessionId),
+        api.getMessages(storedSessionId),
+      ])
+        .then(([session, { messages: apiMessages }]) => {
+          setSession(session);
+          // Convert API messages to frontend Message format
+          const loadedMessages: Message[] = apiMessages.map((msg) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: new Date(msg.createdAt),
+          }));
+          
+          // Check if the session is in progress (last message is from user, meaning assistant response is pending)
+          const lastMessage = loadedMessages[loadedMessages.length - 1];
+          if (lastMessage && lastMessage.role === 'user') {
+            // Add a loading placeholder for the pending assistant response
+            const assistantPlaceholder: Message = {
+              id: `assistant-pending-${Date.now()}`,
+              role: 'assistant',
+              content: '',
+              timestamp: new Date(),
+              isLoading: true,
+            };
+            setMessages([...loadedMessages, assistantPlaceholder]);
+            setIsLoading(true);
+          } else {
+            setMessages(loadedMessages);
+          }
+        })
         .catch(() => {
           localStorage.removeItem('chromium-search-session');
           createSession();
@@ -127,6 +157,7 @@ export function useChat(): UseChatReturn {
     // This blocks sendMessage() since it checks `if (!session || isLoading) return;`
     setSession(null);
     setMessages([]);
+    setIsLoading(false);
     await createSession();
   }, [createSession]);
 

@@ -85,6 +85,12 @@ export const api = {
     return handleResponse<ChatResponse>(response);
   },
 
+  // Get messages for a session
+  async getMessages(sessionId: string): Promise<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }> }> {
+    const response = await fetch(`${API_BASE}/sessions/${sessionId}/messages`);
+    return handleResponse<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }> }>(response);
+  },
+
   // Health check
   async checkHealth(): Promise<{ status: string }> {
     const response = await fetch('/health');
