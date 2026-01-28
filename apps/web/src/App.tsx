@@ -1,9 +1,12 @@
 import { useRef, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { Header, ScopeConfig, ChatMessage, ChatInput, SessionIdDisplay } from './components';
 import { useChat } from './hooks/useChat';
 import { MessageSquare, AlertCircle, Bug } from 'lucide-react';
 
 function App() {
+  const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
+  
   const {
     session,
     messages,
@@ -14,7 +17,7 @@ function App() {
     clearMessages,
     showDebug,
     setShowDebug,
-  } = useChat();
+  } = useChat(urlSessionId);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
