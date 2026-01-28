@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Header, ScopeConfig, ChatMessage, ChatInput } from './components';
+import { Header, ScopeConfig, ChatMessage, ChatInput, SessionIdDisplay } from './components';
 import { useChat } from './hooks/useChat';
 import { MessageSquare, AlertCircle, Bug } from 'lucide-react';
 
@@ -44,8 +44,9 @@ function App() {
               </div>
             )}
 
-            {/* Debug Toggle */}
-            <div className="mb-4 flex items-center justify-end">
+            {/* Session ID and Debug Toggle */}
+            <div className="mb-4 flex items-center justify-between">
+              <SessionIdDisplay sessionId={session?.sessionId || null} />
               <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                 <input
                   type="checkbox"
