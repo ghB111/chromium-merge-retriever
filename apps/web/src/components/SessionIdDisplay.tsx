@@ -12,7 +12,20 @@ export function SessionIdDisplay({ sessionId }: SessionIdDisplayProps) {
     if (!sessionId) return;
     
     try {
-      await navigator.clipboard.writeText(sessionId);
+      // Modern Clipboard API (requires secure context: HTTPS or localhost)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(sessionId);
+      } else {
+        // Fallback for non-secure contexts (e.g., HTTP with IP address)
+        const textArea = document.createElement('textarea');
+        textArea.value = sessionId;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
