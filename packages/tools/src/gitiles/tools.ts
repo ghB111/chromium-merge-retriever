@@ -428,7 +428,7 @@ export function searchCommits(
   keywords: string[],
   options?: { maxResults?: number; caseSensitive?: boolean }
 ): SearchCommitsResult {
-  const { maxResults = 20, caseSensitive = false } = options ?? {};
+  const { maxResults, caseSensitive = false } = options ?? {};
   
   const normalizedKeywords = caseSensitive 
     ? keywords 
@@ -437,7 +437,7 @@ export function searchCommits(
   const matches: SearchCommitsResult['matches'] = [];
   
   for (const commit of commits) {
-    if (matches.length >= maxResults) break;
+    if (maxResults && matches.length >= maxResults) break;
     
     const title = caseSensitive ? commit.title : commit.title.toLowerCase();
     const message = caseSensitive 

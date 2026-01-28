@@ -510,7 +510,7 @@ export class AgentOrchestrator {
       switch (name) {
         case 'search_commits': {
           const keywords = args.keywords as string[];
-          const result = searchCommits(retrieved.commits, keywords, { maxResults: 15 });
+          const result = searchCommits(retrieved.commits, keywords, { maxResults: undefined });
           if (result.matches && result.matches.length > 0) {
             return JSON.stringify({
               found: result.count,
