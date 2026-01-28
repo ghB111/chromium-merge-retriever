@@ -40,7 +40,23 @@ export function useChat(): UseChatReturn {
             content: msg.content,
             timestamp: new Date(msg.createdAt),
           }));
-          setMessages(loadedMessages);
+          
+          // Check if the session is in progress (last message is from user, meaning assistant response is pending)
+          const lastMessage = loadedMessages[loadedMessages.length - 1];
+          if (lastMessage && lastMessage.role === 'user') {
+            // Add a loading placeholder for the pending assistant response
+            const assistantPlaceholder: Message = {
+              id: `assistant-pending-${Date.now()}`,
+              role: 'assistant',
+              content: '',
+              timestamp: new Date(),
+              isLoading: true,
+            };
+            setMessages([...loadedMessages, assistantPlaceholder]);
+            setIsLoading(true);
+          } else {
+            setMessages(loadedMessages);
+          }
         })
         .catch(() => {
           localStorage.removeItem('chromium-search-session');
@@ -141,6 +157,7 @@ export function useChat(): UseChatReturn {
     // This blocks sendMessage() since it checks `if (!session || isLoading) return;`
     setSession(null);
     setMessages([]);
+    setIsLoading(false);
     await createSession();
   }, [createSession]);
 
