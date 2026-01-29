@@ -315,6 +315,14 @@ export class AgentOrchestrator {
       // Continue with any commits found so far
     }
 
+    this.logger.debug(
+      { 
+        relevantCommitsCount: relevantCommits.size, 
+        shas: Array.from(relevantCommits.keys()).map(sha => sha.slice(0, 8)) 
+      },
+      'Agent exploration found relevant commits'
+    );
+
     // Step 3: Rank the found commits using LLM
     if (relevantCommits.size > 0) {
       const foundCommits = Array.from(relevantCommits.entries()).map(([sha, reason]) => {
@@ -335,6 +343,13 @@ export class AgentOrchestrator {
           runId
         );
 
+        this.logger.debug(
+          {
+            rankedCount: ranked.rankings.length,
+            shas: ranked.rankings.map(r => r.sha.slice(0, 8))
+          },
+          'LLM ranking completed'
+        );
         if (ranked.rankings.length > 0) {
           retrieved.rankedCandidates = ranked.rankings.map((r) => ({
             sha: this.expandSha(r.sha, retrieved.commits),
