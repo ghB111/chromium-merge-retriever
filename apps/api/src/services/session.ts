@@ -176,7 +176,8 @@ export class SessionService {
     sessionId: string,
     role: 'user' | 'assistant',
     content: string,
-    runId?: string
+    runId?: string,
+    evidence?: unknown[]
   ): Promise<string> {
     const message = await this.prisma.message.create({
       data: {
@@ -184,6 +185,7 @@ export class SessionService {
         role,
         content,
         runId,
+        evidence: evidence && evidence.length > 0 ? JSON.parse(JSON.stringify(evidence)) : null,
       },
     });
 
@@ -193,7 +195,7 @@ export class SessionService {
   /**
    * Get messages for a session
    */
-  async getMessages(sessionId: string): Promise<Array<{ id: string; role: string; content: string; createdAt: Date }>> {
+  async getMessages(sessionId: string): Promise<Array<{ id: string; role: string; content: string; evidence: unknown[] | null; createdAt: Date }>> {
     const messages = await this.prisma.message.findMany({
       where: { sessionId },
       orderBy: { createdAt: 'asc' },
@@ -201,11 +203,15 @@ export class SessionService {
         id: true,
         role: true,
         content: true,
+        evidence: true,
         createdAt: true,
       },
     });
 
-    return messages;
+    return messages.map(msg => ({
+      ...msg,
+      evidence: msg.evidence as unknown[] | null,
+    }));
   }
 
   /**

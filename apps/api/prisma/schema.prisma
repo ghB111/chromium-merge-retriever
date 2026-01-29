@@ -30,6 +30,7 @@ model Message {
   session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   role      String   // 'user' | 'assistant'
   content   String
+  evidence  Json?    // Evidence array for assistant messages (diffs, commits, file excerpts)
   createdAt DateTime @default(now())
   runId     String?  // Associated agent run for assistant messages
 

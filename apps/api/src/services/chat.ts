@@ -76,8 +76,8 @@ export class ChatService {
         includeDebug: includeDebug ?? this.config.debug.enabled,
       });
 
-      // Store assistant message
-      await this.sessionService.addMessage(sessionId, 'assistant', result.answer, runId);
+      // Store assistant message with evidence
+      await this.sessionService.addMessage(sessionId, 'assistant', result.answer, runId, result.evidence);
 
       // Record run completion
       const durationMs = timer.elapsed();
@@ -124,7 +124,7 @@ export class ChatService {
   /**
    * Get chat history for a session
    */
-  async getChatHistory(sessionId: string): Promise<Array<{ role: string; content: string; createdAt: Date }>> {
+  async getChatHistory(sessionId: string): Promise<Array<{ role: string; content: string; evidence: unknown[] | null; createdAt: Date }>> {
     return this.sessionService.getMessages(sessionId);
   }
 }

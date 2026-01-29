@@ -1,4 +1,4 @@
-import type { Session, SessionScope, ChatResponse, PreSavedRange, DownloadProgressUpdate, AdminSessionSummary, AdminSessionDetail } from '../types';
+import type { Session, SessionScope, ChatResponse, PreSavedRange, DownloadProgressUpdate, AdminSessionSummary, AdminSessionDetail, Evidence } from '../types';
 
 const API_BASE = '/v1';
 
@@ -86,9 +86,9 @@ export const api = {
   },
 
   // Get messages for a session
-  async getMessages(sessionId: string): Promise<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }> }> {
+  async getMessages(sessionId: string): Promise<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; evidence: Evidence[] | null; createdAt: string }> }> {
     const response = await fetch(`${API_BASE}/sessions/${sessionId}/messages`);
-    return handleResponse<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }> }>(response);
+    return handleResponse<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; evidence: Evidence[] | null; createdAt: string }> }>(response);
   },
 
   // Health check
