@@ -45,6 +45,7 @@ export function useChat(urlSessionId?: string): UseChatReturn {
         id: msg.id,
         role: msg.role,
         content: msg.content,
+        evidence: msg.evidence ?? undefined,
         timestamp: new Date(msg.createdAt),
       }));
       
