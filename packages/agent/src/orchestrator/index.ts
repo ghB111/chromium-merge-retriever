@@ -152,7 +152,9 @@ Strategy:
 - If needed, view the diff to see the actual code changes
 - Mark each commit you find relevant with mark_relevant_commit
 
-When you have found all relevant commits (or determined there are none), provide a brief summary of what you found.
+CRITICAL: You MUST call mark_relevant_commit for EVERY commit you determine is relevant BEFORE providing your final summary. Do not just describe relevant commits in text - you must explicitly mark them using the tool. If you found relevant commits but did not call mark_relevant_commit for them, your work is incomplete.
+
+When you have marked all relevant commits (or determined there are none), provide a brief summary of what you found.
 
 Available commits in range: {commit_count}
 Sample commit titles:
@@ -404,7 +406,7 @@ export class AgentOrchestrator {
     toolContext: ToolContext,
     relevantCommits: Map<string, string>
   ): Promise<void> {
-    const maxIterations = 10;
+    const maxIterations = 50;
     let iteration = 0;
 
     // Build system prompt with commit info
