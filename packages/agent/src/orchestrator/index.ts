@@ -152,7 +152,9 @@ Strategy:
 - If needed, view the diff to see the actual code changes
 - Mark each commit you find relevant with mark_relevant_commit
 
-When you have found all relevant commits (or determined there are none), provide a brief summary of what you found.
+CRITICAL: You MUST call mark_relevant_commit for EVERY commit you determine is relevant BEFORE providing your final summary. Do not just describe relevant commits in text - you must explicitly mark them using the tool. If you found relevant commits but did not call mark_relevant_commit for them, your work is incomplete.
+
+When you have marked all relevant commits (or determined there are none), provide a brief summary of what you found.
 
 Available commits in range: {commit_count}
 Sample commit titles:
@@ -454,6 +456,22 @@ export class AgentOrchestrator {
           []
         );
         this.logger.debug({ content: result.content?.slice(0, 100) }, 'Agent finished exploring');
+        
+        // Fallback: Extract any commit SHAs mentioned in the final response that weren't marked
+        // This handles cases where the agent discusses relevant commits but forgets to call mark_relevant_commit
+        if (result.content && relevantCommits.size === 0) {
+          const extractedShas = this.extractCommitShasFromResponse(result.content, retrieved.commits);
+          if (extractedShas.length > 0) {
+            this.logger.info(
+              { extractedCount: extractedShas.length, shas: extractedShas.map(s => s.slice(0, 8)) },
+              'Agent mentioned commits without marking them - extracting from response'
+            );
+            for (const sha of extractedShas) {
+              relevantCommits.set(sha, 'Mentioned in agent response (not explicitly marked)');
+            }
+          }
+        }
+        
         break;
       }
 
@@ -636,6 +654,35 @@ export class AgentOrchestrator {
     const normalized = shortSha.toLowerCase();
     const match = commits.find((c) => c.sha.toLowerCase().startsWith(normalized));
     return match?.sha ?? shortSha;
+  }
+
+  /**
+   * Extract commit SHAs mentioned in the agent's response text
+   * This is a fallback for when the agent discusses commits but forgets to call mark_relevant_commit
+   */
+  private extractCommitShasFromResponse(responseText: string, commits: CommitSummary[]): string[] {
+    const foundShas: string[] = [];
+    
+    // Match patterns that look like commit SHAs (7-40 hex characters)
+    // Common patterns: "abc1234", "commit abc1234", "SHA: abc1234", etc.
+    const shaPattern = /\b([0-9a-f]{7,40})\b/gi;
+    const matches = responseText.matchAll(shaPattern);
+    
+    for (const match of matches) {
+      const potentialSha = match[1].toLowerCase();
+      
+      // Try to find a matching commit in our list
+      const matchedCommit = commits.find(c => 
+        c.sha.toLowerCase().startsWith(potentialSha) || 
+        potentialSha.startsWith(c.sha.toLowerCase().slice(0, 8))
+      );
+      
+      if (matchedCommit && !foundShas.includes(matchedCommit.sha)) {
+        foundShas.push(matchedCommit.sha);
+      }
+    }
+    
+    return foundShas;
   }
 
   /**
