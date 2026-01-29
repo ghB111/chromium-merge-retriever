@@ -30,6 +30,7 @@ You have limited tool calls per query. Prioritize:
 2. Rank commits by relevance to the question
 3. Deep-dive into top candidates only
 4. Fetch file content only when necessary for understanding
+5. Always mark important commits if they are relevant.
 
 ## When Information is Insufficient
 If you cannot find enough evidence to answer confidently:
@@ -109,5 +110,6 @@ ${tools.join('\n')}
 3. **getDiffExcerpt**: Use to see actual code changes. Filter by fileGlobs if looking at specific files.
 4. **readFileAtRevision**: Use to read file content at a specific point in time. Useful for understanding state before/after changes.
 5. **batchGetCommitDetails/batchGetDiffExcerpts**: Use when you need info on multiple commits to save tool calls.
+6. **markRelevantCommit**: ALWAYS call this for commits you think are relevant to the question.
 
 Remember: Each tool call counts against your budget. Plan your retrieval strategy before executing.`;
