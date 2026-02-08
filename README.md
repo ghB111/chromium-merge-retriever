@@ -7,13 +7,35 @@ A cloud-deployable chat service that answers questions about changes in Chromium
 - 🔍 **Commit Range Analysis**: Parse Gitiles log URLs and analyze changes within a specific commit range
 - 🤖 **Agentic Retrieval**: Intelligent retrieval and ranking of relevant commits, diffs, and files
 - 📊 **Evidence-Based Answers**: Grounded answers with commit SHAs, file paths, and diff excerpts
-- 💬 **Modern Web Interface**: Beautiful chat UI with scope configuration and evidence display
-- ⚡ **Optimized Performance**: Handles 2,000-7,000 commits with intelligent caching
+- 💬 **Observability out of the box**: See detailed logs of all llm queries in the web interface
 - 🐳 **Docker Ready**: Full Docker Compose setup for local development and cloud deployment
 
 ![Web Interface](docs/screenshot.png)
 
 ## Quick Start
+
+### Docker Deployment
+
+1. **Configure environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
+
+2. **Build all packages**:
+   ```bash
+   npm install
+   npm run build
+   ```
+
+3. **Start with Docker Compose**:
+   ```bash
+   docker-compose -f infra/docker/docker-compose.yml up --build -d
+   ```
+
+- **Web UI**: http://localhost:8080
+- **API**: http://localhost:3000
+
 
 ### Prerequisites
 
@@ -56,39 +78,6 @@ A cloud-deployable chat service that answers questions about changes in Chromium
 - **Web UI**: http://localhost:5173
 - **API**: http://localhost:3000
 
-### Docker Deployment
-
-1. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-2. **Build all packages**:
-   ```bash
-   npm install
-   npm run build
-   ```
-
-3. **Start with Docker Compose**:
-   ```bash
-   docker-compose -f infra/docker/docker-compose.yml up --build -d
-   ```
-
-- **Web UI**: http://localhost:8080
-- **API**: http://localhost:3000
-
-## Web Interface
-
-The web interface provides a modern chat experience for interacting with the Chromium Search service.
-
-### Features
-
-- **Scope Configuration**: Set commit range via Gitiles URL and filter by path scope
-- **Chat Interface**: Ask questions in natural language
-- **Evidence Display**: View related commits, diffs, and file excerpts
-- **Debug Mode**: Toggle to see detailed tool calls and ranking information
-
 ### Usage
 
 1. **Set a commit range**: Paste a Gitiles log URL (e.g., `https://chromium.googlesource.com/chromium/src/+log/abc123..def456`)
@@ -98,126 +87,14 @@ The web interface provides a modern chat experience for interacting with the Chr
 ### Example Questions
 
 - "What changes were made to the network stack?"
-- "Which commits modified the HTTP cache?"
-- "What could have caused test failures in net/http/?"
+- "What are new-coming AI features integrated to chromium?"
+- "Why was GetBrowsersList() method deleted and what should we use now instead?"
 - "Show me changes to class HttpStreamFactory"
-
-## API Usage
-
-### Create a Session
-
-```bash
-curl -X POST http://localhost:3000/v1/sessions
-```
-
-Response:
-```json
-{
-  "sessionId": "sess_abc123...",
-  "scope": {
-    "rangeEnabled": true,
-    "range": null,
-    "pathScope": []
-  }
-}
-```
-
-### Set Commit Range from Gitiles URL
-
-```bash
-curl -X POST http://localhost:3000/v1/sessions/{sessionId}/scope \
-  -H "Content-Type: application/json" \
-  -d '{
-    "rangeUrl": "https://chromium.googlesource.com/chromium/src/+log/abc123..def456"
-  }'
-```
-
-### Send a Chat Message
-
-```bash
-curl -X POST http://localhost:3000/v1/sessions/{sessionId}/messages \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "What changes were made to the network stack?"
-  }'
-```
-
-Response:
-```json
-{
-  "answer": "## Answer\n\nSeveral changes were made to the network stack...",
-  "evidence": [
-    {
-      "type": "commit",
-      "sha": "abc123...",
-      "url": "https://chromium.googlesource.com/chromium/src/+/abc123...",
-      "whyRelevant": "Modifies net/http/..."
-    }
-  ],
-  "debug": {
-    "runId": "run_xyz...",
-    "toolCalls": [...],
-    "rankedCandidates": [...]
-  }
-}
-```
-
-## Project Structure
-
-```
-.
-├── apps/
-│   ├── api/                 # Express API server
-│   │   ├── src/
-│   │   │   ├── routes/      # API route handlers
-│   │   │   ├── services/    # Business logic
-│   │   │   └── middleware/  # Express middleware
-│   │   └── prisma/          # Database schema
-│   └── web/                 # React web interface
-│       ├── src/
-│       │   ├── components/  # React components
-│       │   ├── hooks/       # Custom hooks
-│       │   └── services/    # API client
-│       └── public/          # Static assets
-├── packages/
-│   ├── shared/              # Shared types, config, utilities
-│   ├── tools/               # Gitiles client and tools
-│   └── agent/               # Agent orchestrator
-├── infra/
-│   └── docker/              # Docker configuration
-├── evals/                   # Evaluation harness
-└── README.md
-```
+- "Summarize all changes made to the autofill component"
 
 ## Configuration
 
 All configuration is via environment variables. See `.env.example` for all options.
-
-### Key Settings
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key for LLM features | - |
-| `OPENAI_BASE_URL` | Custom base URL for OpenAI-compatible APIs (Azure, Ollama, vLLM, etc.) | - |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/chromium_search` |
-| `MAX_TOOL_CALLS_PER_RUN` | Budget for tool calls | `12` |
-| `RUN_TIMEOUT_MS` | Timeout for agent runs | `110000` (110s) |
-| `MAX_COMMITS_DEFAULT` | Max commits to fetch | `7000` |
-
-### Using Custom LLM Providers
-
-The service supports any OpenAI-compatible API by setting `OPENAI_BASE_URL`:
-
-```bash
-# Azure OpenAI
-OPENAI_BASE_URL=https://your-resource.openai.azure.com
-
-# Local Ollama
-OPENAI_BASE_URL=http://localhost:11434/v1
-
-# vLLM
-OPENAI_BASE_URL=http://localhost:8000/v1
-```
 
 ## How It Works
 
@@ -230,28 +107,25 @@ https://chromium.googlesource.com/chromium/src/+log/<A>..<B>?pretty=fuller
 
 ### 2. Commit Retrieval
 
-Commits are fetched via Gitiles JSON API with pagination support and caching.
+Depending on a configuration parameter, the actual commit storage used for queries is either a local 
+git checkout mounted into the backend container, or a remote gitiles server. The preferred way is a local checkout which works faster due
+to chromium gitiles having large timeouts. Keep in mind though that a full local chromium checkout will take up >100gb of disk storage.
 
-### 3. Ranking
+### 3. Agent loop && tools
 
-Commits are ranked using:
-- Lexical matching on titles and messages
-- Path scope filtering
-- Optional LLM-based reranking
+In order to synthesize an answer, the agent is given several tools to investigate the commit history and source files.
+For example, the bot can query commit history by keywords, then analyze the commit messages, the diffs and other files at that point in
+history. The tool set is extensible so quality of answer synthesis can be enhanced. Tool calls and marking of relevant commits is done by a faster model.
 
-### 4. Deep Dive
+### 4. Answer Synthesis
 
-Top candidates are analyzed with:
-- Full commit details
-- Diff excerpts
-- File content at specific revisions
-
-### 5. Answer Synthesis
-
+After finding the relevant commits and changes, the agent pefrorms answer synthesis.
 The final answer includes:
 - Direct answer to the question
 - Change summary bullets
-- Evidence with links and excerpts
+- Evidence with commit links and excerpts
+
+Answer synthesis is performed by smarter model then the one calling tools.
 
 ## Testing
 
@@ -262,64 +136,6 @@ npm test
 # Run integration tests (requires network)
 RUN_INTEGRATION_TESTS=true npm run test:integration -w packages/tools
 ```
-
-## Evaluation
-
-Run the evaluation harness:
-
-```bash
-# Quick evaluation (fast cases only)
-npm run eval:quick -w evals
-
-# Full evaluation
-npm run eval -w evals
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        API Server                            │
-│  ┌─────────┐  ┌───────────┐  ┌──────────────────────────┐   │
-│  │ Routes  │──│ Services  │──│ Agent Orchestrator       │   │
-│  └─────────┘  └───────────┘  │  ┌────────────────────┐  │   │
-│                              │  │ Query Analysis     │  │   │
-│                              │  │ Commit Retrieval   │  │   │
-│                              │  │ Ranking            │  │   │
-│                              │  │ Deep Dive          │  │   │
-│                              │  │ Answer Synthesis   │  │   │
-│                              │  └────────────────────┘  │   │
-│                              └──────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-          ┌───────────────────┼───────────────────┐
-          ▼                   ▼                   ▼
-    ┌───────────┐      ┌───────────┐       ┌───────────┐
-    │ Gitiles   │      │ PostgreSQL│       │   Redis   │
-    │ (HTTP)    │      │ (Sessions)│       │  (Cache)  │
-    └───────────┘      └───────────┘       └───────────┘
-```
-
-## API Reference
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/v1/sessions` | Create a new session |
-| `GET` | `/v1/sessions/:id` | Get session details |
-| `POST` | `/v1/sessions/:id/scope` | Update session scope |
-| `DELETE` | `/v1/sessions/:id` | Delete a session |
-| `POST` | `/v1/sessions/:id/messages` | Send a chat message |
-| `GET` | `/v1/sessions/:id/history` | Get chat history |
-| `GET` | `/health` | Health check |
-| `GET` | `/health/ready` | Readiness check |
-
-### Request Headers
-
-| Header | Description |
-|--------|-------------|
-| `X-Include-Debug: true` | Include debug info in response |
 
 ## Development
 
