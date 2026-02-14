@@ -48,6 +48,23 @@ export interface DebugInfo {
   rankedCandidates: RankedCandidate[];
 }
 
+export type ProgressStage =
+  | 'starting'
+  | 'listing_commits'
+  | 'exploring'
+  | 'tool_call'
+  | 'ranking'
+  | 'fetching_evidence'
+  | 'synthesizing'
+  | 'completed'
+  | 'error';
+
+export interface ProgressUpdate {
+  stage: ProgressStage;
+  message: string;
+  timestamp: string;
+}
+
 export interface ChatResponse {
   answer: string;
   evidence: Evidence[];
@@ -62,6 +79,7 @@ export interface Message {
   debug?: DebugInfo;
   timestamp: Date;
   isLoading?: boolean;
+  progressUpdates?: ProgressUpdate[];
 }
 
 // Pre-saved range types

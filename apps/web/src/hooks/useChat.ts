@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
-import type { Session, SessionScope, Message } from '../types';
+import type { Session, SessionScope, Message, ProgressUpdate } from '../types';
 
 interface UseChatReturn {
   session: Session | null;
@@ -154,6 +154,7 @@ export function useChat(urlSessionId?: string): UseChatReturn {
       content: '',
       timestamp: new Date(),
       isLoading: true,
+      progressUpdates: [],
     };
 
     setMessages(prev => [...prev, userMessage, assistantPlaceholder]);
@@ -161,7 +162,33 @@ export function useChat(urlSessionId?: string): UseChatReturn {
     setError(null);
 
     try {
-      const response = await api.sendMessage(session.sessionId, text, showDebug);
+      const response = await api.sendMessageStream(
+        session.sessionId,
+        text,
+        showDebug,
+        (progress: ProgressUpdate) => {
+          setMessages(prev => prev.map(msg => {
+            if (msg.id !== assistantPlaceholder.id) {
+              return msg;
+            }
+
+            const currentUpdates = msg.progressUpdates ?? [];
+            const lastUpdate = currentUpdates[currentUpdates.length - 1];
+            if (
+              lastUpdate &&
+              lastUpdate.stage === progress.stage &&
+              lastUpdate.message === progress.message
+            ) {
+              return msg;
+            }
+
+            return {
+              ...msg,
+              progressUpdates: [...currentUpdates, progress],
+            };
+          }));
+        }
+      );
       
       setMessages(prev => prev.map(msg => 
         msg.id === assistantPlaceholder.id

@@ -1,4 +1,14 @@
-import type { Session, SessionScope, ChatResponse, PreSavedRange, DownloadProgressUpdate, AdminSessionSummary, AdminSessionDetail, Evidence } from '../types';
+import type {
+  Session,
+  SessionScope,
+  ChatResponse,
+  PreSavedRange,
+  DownloadProgressUpdate,
+  AdminSessionSummary,
+  AdminSessionDetail,
+  Evidence,
+  ProgressUpdate,
+} from '../types';
 
 const API_BASE = '/v1';
 
@@ -10,6 +20,23 @@ class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+}
+
+type ChatStreamEvent =
+  | { type: 'progress'; progress: ProgressUpdate }
+  | { type: 'result'; response: ChatResponse }
+  | { type: 'error'; error: { message: string; code?: string; status?: number } };
+
+function parseChatStreamEvent(line: string): ChatStreamEvent | null {
+  try {
+    const parsed = JSON.parse(line) as ChatStreamEvent;
+    if (!parsed || typeof parsed !== 'object' || !('type' in parsed)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
   }
 }
 
@@ -83,6 +110,96 @@ export const api = {
       body: JSON.stringify({ text }),
     });
     return handleResponse<ChatResponse>(response);
+  },
+
+  async sendMessageStream(
+    sessionId: string,
+    text: string,
+    includeDebug = false,
+    onProgress?: (progress: ProgressUpdate) => void
+  ): Promise<ChatResponse> {
+    const response = await fetch(`${API_BASE}/sessions/${sessionId}/messages/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/x-ndjson',
+        ...(includeDebug && { 'X-Include-Debug': 'true' }),
+      },
+      body: JSON.stringify({ text }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new ApiError(
+        error.error?.message || `HTTP ${response.status}`,
+        response.status,
+        error.error?.code
+      );
+    }
+
+    if (!response.body) {
+      throw new ApiError('Streaming response is not available in this browser.', 500);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResponse: ChatResponse | null = null;
+
+    const processLine = (line: string): void => {
+      const trimmedLine = line.trim();
+      if (trimmedLine.length === 0) {
+        return;
+      }
+
+      const event = parseChatStreamEvent(trimmedLine);
+      if (!event) {
+        return;
+      }
+
+      switch (event.type) {
+        case 'progress':
+          onProgress?.(event.progress);
+          break;
+        case 'result':
+          finalResponse = event.response;
+          break;
+        case 'error':
+          throw new ApiError(
+            event.error.message,
+            event.error.status ?? 500,
+            event.error.code
+          );
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex = buffer.indexOf('\n');
+      while (newlineIndex >= 0) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        processLine(line);
+        newlineIndex = buffer.indexOf('\n');
+      }
+    }
+
+    const trailingLine = buffer.trim();
+    if (trailingLine.length > 0) {
+      processLine(trailingLine);
+    }
+
+    if (!finalResponse) {
+      throw new ApiError('Stream ended before delivering a response.', 500);
+    }
+
+    return finalResponse;
   },
 
   // Get messages for a session
