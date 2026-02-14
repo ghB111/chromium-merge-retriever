@@ -173,11 +173,13 @@ export const api = {
       }
     };
 
-    while (true) {
+    let streamDone = false;
+    while (!streamDone) {
       const { done, value } = await reader.read();
       if (done) {
+        streamDone = true;
         buffer += decoder.decode();
-        break;
+        continue;
       }
 
       buffer += decoder.decode(value, { stream: true });
