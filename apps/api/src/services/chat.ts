@@ -16,7 +16,7 @@ import {
   type Logger,
 } from '@chromium-search/shared';
 
-import { getOrchestrator } from '@chromium-search/agent';
+import { getOrchestrator, type AgentProgressUpdate } from '@chromium-search/agent';
 import { SessionService, getSessionService } from './session.js';
 
 // ============================================================================
@@ -39,7 +39,8 @@ export class ChatService {
   async processMessage(
     sessionId: string,
     request: ChatMessageRequest,
-    includeDebug?: boolean
+    includeDebug?: boolean,
+    onProgress?: (update: AgentProgressUpdate) => void
   ): Promise<ChatResponse> {
     const timer = createTimer();
     const runId = generateRunId();
@@ -74,6 +75,7 @@ export class ChatService {
         scope: session.scope,
         query: request.text,
         includeDebug: includeDebug ?? this.config.debug.enabled,
+        onProgress,
       });
 
       // Store assistant message with evidence

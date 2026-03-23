@@ -8,6 +8,12 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user';
+  const progressUpdates = message.progressUpdates ?? [];
+  const latestProgressMessage =
+    progressUpdates[progressUpdates.length - 1]?.message ?? 'Analyzing commits...';
+  const recentProgressMessages = progressUpdates
+    .slice(-5)
+    .map(update => update.message);
 
   return (
     <div className={`flex gap-4 ${isUser ? 'flex-row-reverse' : ''}`}>
@@ -30,9 +36,20 @@ export function ChatMessage({ message }: ChatMessageProps) {
             : 'bg-white border border-gray-200 shadow-sm'
         }`}>
           {message.isLoading ? (
-            <div className="flex items-center gap-2 text-gray-500">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Analyzing commits...</span>
+            <div>
+              <div className="flex items-center gap-2 text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{latestProgressMessage}</span>
+              </div>
+              {recentProgressMessages.length > 1 && (
+                <ul className="mt-2 space-y-1 text-xs text-gray-400">
+                  {recentProgressMessages.slice(0, -1).map((progress, index) => (
+                    <li key={`${progress}-${index}`} className="truncate">
+                      • {progress}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ) : (
             <div className={`markdown-content ${isUser ? 'text-white' : ''}`}>

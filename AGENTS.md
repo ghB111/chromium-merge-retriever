@@ -150,6 +150,7 @@ npm run eval -w evals
 | `POST` | `/v1/sessions/:id/scope` | Update session scope |
 | `DELETE` | `/v1/sessions/:id` | Delete a session |
 | `POST` | `/v1/sessions/:id/messages` | Send a chat message |
+| `POST` | `/v1/sessions/:id/messages/stream` | Send a chat message with progress streaming |
 | `GET` | `/v1/sessions/:id/history` | Get chat history |
 | `GET` | `/health` | Health check |
 | `GET` | `/health/ready` | Readiness check |
