@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import type { Session, SessionScope, Message, ProgressUpdate } from '../types';
@@ -16,6 +16,9 @@ interface UseChatReturn {
   setShowDebug: (show: boolean) => void;
 }
 
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_ATTEMPTS = 60;
+
 export function useChat(urlSessionId?: string): UseChatReturn {
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
@@ -23,6 +26,64 @@ export function useChat(urlSessionId?: string): UseChatReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(true);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearTimeout(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => stopPolling, [stopPolling]);
+
+  const pollForAssistantReply = useCallback((sessionId: string, placeholderId: string, expectedCount: number) => {
+    let attempts = 0;
+
+    const tick = async () => {
+      attempts++;
+      try {
+        const { messages: apiMessages } = await api.getMessages(sessionId);
+        if (apiMessages.length > expectedCount) {
+          const last = apiMessages[apiMessages.length - 1];
+          if (last.role === 'assistant') {
+            stopPolling();
+            setMessages(prev => prev.map(msg =>
+              msg.id === placeholderId
+                ? {
+                    ...msg,
+                    id: last.id,
+                    content: last.content,
+                    evidence: last.evidence ?? undefined,
+                    timestamp: new Date(last.createdAt),
+                    isLoading: false,
+                  }
+                : msg
+            ));
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch {
+        // network hiccup – keep trying
+      }
+
+      if (attempts >= POLL_MAX_ATTEMPTS) {
+        stopPolling();
+        setMessages(prev => prev.map(msg =>
+          msg.id === placeholderId
+            ? { ...msg, content: 'The assistant response is taking too long. Please try again.', isLoading: false }
+            : msg
+        ));
+        setIsLoading(false);
+        return;
+      }
+
+      pollRef.current = setTimeout(tick, POLL_INTERVAL_MS);
+    };
+
+    pollRef.current = setTimeout(tick, POLL_INTERVAL_MS);
+  }, [stopPolling]);
 
   // Helper function to load session and messages
   const loadSession = useCallback(async (sessionId: string, updateUrl: boolean = false) => {
@@ -52,16 +113,18 @@ export function useChat(urlSessionId?: string): UseChatReturn {
       // Check if the session is in progress (last message is from user, meaning assistant response is pending)
       const lastMessage = loadedMessages[loadedMessages.length - 1];
       if (lastMessage && lastMessage.role === 'user') {
-        // Add a loading placeholder for the pending assistant response
+        const placeholderId = `assistant-pending-${Date.now()}`;
         const assistantPlaceholder: Message = {
-          id: `assistant-pending-${Date.now()}`,
+          id: placeholderId,
           role: 'assistant',
           content: '',
           timestamp: new Date(),
           isLoading: true,
+          progressUpdates: [{ stage: 'starting', message: 'Waiting for response...', timestamp: new Date().toISOString() }],
         };
         setMessages([...loadedMessages, assistantPlaceholder]);
         setIsLoading(true);
+        pollForAssistantReply(sessionId, placeholderId, apiMessages.length);
       } else {
         setMessages(loadedMessages);
       }
@@ -70,7 +133,7 @@ export function useChat(urlSessionId?: string): UseChatReturn {
     } catch {
       return false;
     }
-  }, [navigate]);
+  }, [navigate, pollForAssistantReply]);
 
   // Auto-create session on mount or load existing session with messages
   useEffect(() => {
@@ -218,13 +281,14 @@ export function useChat(urlSessionId?: string): UseChatReturn {
   }, [session, isLoading, showDebug]);
 
   const clearMessages = useCallback(async () => {
+    stopPolling();
     // Set session to null immediately to prevent sends during the transition.
     // This blocks sendMessage() since it checks `if (!session || isLoading) return;`
     setSession(null);
     setMessages([]);
     setIsLoading(false);
     await createNewSession();
-  }, [createNewSession]);
+  }, [createNewSession, stopPolling]);
 
   return {
     session,

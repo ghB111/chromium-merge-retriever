@@ -120,13 +120,13 @@ export function createMessagesRouter(prisma: PrismaClient): Router {
         res.flushHeaders();
       }
 
-      let clientClosed = false;
-      req.on('close', () => {
-        clientClosed = true;
+      let clientDisconnected = false;
+      res.on('close', () => {
+        clientDisconnected = true;
       });
 
       const emit = (event: StreamEvent): void => {
-        if (clientClosed || res.writableEnded || res.destroyed) {
+        if (clientDisconnected || res.writableEnded || res.destroyed) {
           return;
         }
         writeStreamEvent(res, event);
