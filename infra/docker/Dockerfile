@@ -68,6 +68,10 @@ COPY --from=builder /app/packages/agent/dist ./packages/agent/dist
 # Set ownership
 RUN chown -R nodejs:nodejs /app
 
+# Host-mounted checkouts are often owned by a different uid; git 2.35+ refuses that unless
+# the path is marked safe. Must run as nodejs so config lands in the runtime user's ~/.gitconfig.
+RUN su nodejs -s /bin/sh -c 'git config --global --add safe.directory /data/checkouts/chromium/src'
+
 USER nodejs
 
 ENV NODE_ENV=production
